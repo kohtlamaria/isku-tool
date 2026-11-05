@@ -1,0 +1,9 @@
+[package]
+name = "isku-tool"
+version = "0.1.0"
+edition = "2021"
+description = "Reads settings from a Roccat Isku keyboard"
+publish = false
+
+[dependencies]
+hidapi = "2.6"
