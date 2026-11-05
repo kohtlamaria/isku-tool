@@ -1,0 +1,5 @@
+backups/
+*.log
+node_modules/
+target/
+dist/
