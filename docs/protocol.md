@@ -96,6 +96,11 @@ they cannot hold a key down.
 
 Writes are now allowed to any profile, after a backup.
 
+Confirmed on Profile 5: an Easy-Shift zone key (Shift+Q) written as a b8
+shortcut typed 7, and as Shift+7 typed `/` on an Estonian layout. So the zone
+takes shortcuts, and the modifier bits are right (bit 1 = Shift).
+
 ## Next questions
 
-1. Easy-Shift zone: does a b8 shortcut work there the same way?
+1. Confirm Ctrl, Alt and Win bits the same way as Shift.
+2. M1-M5 writes are untested.

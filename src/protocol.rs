@@ -57,8 +57,10 @@ pub struct KeyGroup {
     pub title: &'static str,
     pub report: Report,
     pub labels: &'static [&'static str],
-    /// The first key's macro index, for groups that can hold macros.
+    /// The first key's index. Keys below 0x24 can hold macros.
     pub first_macro_index: u8,
+    /// What each key holds when it has not been changed, for groups that have one.
+    pub defaults: Option<&'static [u8]>,
 }
 
 pub const THUMB_KEYS: KeyGroup = KeyGroup {
@@ -66,6 +68,7 @@ pub const THUMB_KEYS: KeyGroup = KeyGroup {
     report: KEYS_THUMBSTER,
     labels: &["T1", "T2", "T3", "Shift+T1", "Shift+T2", "Shift+T3"],
     first_macro_index: 0x1e,
+    defaults: None,
 };
 
 pub const MACRO_KEYS: KeyGroup = KeyGroup {
@@ -73,6 +76,7 @@ pub const MACRO_KEYS: KeyGroup = KeyGroup {
     report: KEYS_MACRO,
     labels: &["M1", "M2", "M3", "M4", "M5", "Shift+M1", "Shift+M2", "Shift+M3", "Shift+M4", "Shift+M5"],
     first_macro_index: 0x00,
+    defaults: None,
 };
 
 pub const EASYZONE_KEYS: KeyGroup = KeyGroup {
@@ -83,6 +87,7 @@ pub const EASYZONE_KEYS: KeyGroup = KeyGroup {
         "V", "B",
     ],
     first_macro_index: 0x0a,
+    defaults: Some(&EASYZONE_DEFAULTS),
 };
 
 /// What the Easy-Shift zone holds when a key has not been changed.
@@ -90,6 +95,23 @@ pub const EASYZONE_DEFAULTS: [u8; 20] = [
     0x1e, 0x1f, 0x20, 0x21, 0x22, 0x14, 0x1a, 0x08, 0x15, 0x17, 0x04, 0x16, 0x07, 0x09, 0x0a,
     0x1d, 0x1b, 0x06, 0x19, 0x05,
 ];
+
+pub const FUNCTION_KEYS: KeyGroup = KeyGroup {
+    title: "F-keys",
+    report: KEYS_FUNCTION,
+    labels: &["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
+    first_macro_index: 0x24,
+    defaults: Some(&[0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45]),
+};
+
+/// Names and defaults from roccat-tools, matching profiles 3-5 in our backup.
+pub const MEDIA_KEYS: KeyGroup = KeyGroup {
+    title: "Media keys",
+    report: KEYS_MEDIA,
+    labels: &["Mute", "VolDown", "VolUp", "Play", "Prev", "Next", "WWW", "Computer"],
+    first_macro_index: 0x30,
+    defaults: Some(&[0xa0, 0xa2, 0xa1, 0xa4, 0xa5, 0xa6, 0xa8, 0xa9]),
+};
 
 /// The 16-bit sum of every byte, which the keyboard stores little-endian.
 pub fn checksum(bytes: &[u8]) -> u16 {
@@ -369,17 +391,17 @@ pub fn with_shortcut(
     with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier, key })
 }
 
-/// Returns a copy of an Easy-Shift zone report with one key put back to
-/// normal: its own key code as the action, as the keyboard stores unchanged keys.
-pub fn with_easyzone_default(report: &[u8], position: usize) -> Option<Vec<u8>> {
-    let action = *EASYZONE_DEFAULTS.get(position)?;
-    with_binding(report, &EASYZONE_KEYS, position, Binding { action, modifier: 0, key: 0 })
+/// Returns a copy of a key report with one key put back to what it does when
+/// unchanged, for groups that have defaults.
+pub fn with_default(report: &[u8], group: &KeyGroup, position: usize) -> Option<Vec<u8>> {
+    let action = *group.defaults?.get(position)?;
+    with_binding(report, group, position, Binding { action, modifier: 0, key: 0 })
 }
 
-/// Finds a settable key by name: `T1`, `Shift+T1`, `M1`, `Shift+M1`, or an
-/// Easy-Shift zone key such as `Shift+Q`.
+/// Finds a settable key by name: `T1`, `Shift+T1`, `M1`, `Shift+M1`, `F1`,
+/// `Mute`, or an Easy-Shift zone key such as `Shift+Q`.
 pub fn find_key(label: &str) -> Option<(&'static KeyGroup, usize)> {
-    for group in [&THUMB_KEYS, &MACRO_KEYS] {
+    for group in [&THUMB_KEYS, &MACRO_KEYS, &FUNCTION_KEYS, &MEDIA_KEYS] {
         if let Some(i) = group.labels.iter().position(|l| l.eq_ignore_ascii_case(label)) {
             return Some((group, i));
         }
@@ -468,8 +490,11 @@ mod tests {
 
     #[test]
     fn key_report_sizes_fit_their_key_counts() {
-        for group in [THUMB_KEYS, MACRO_KEYS, EASYZONE_KEYS] {
+        for group in [THUMB_KEYS, MACRO_KEYS, EASYZONE_KEYS, FUNCTION_KEYS, MEDIA_KEYS] {
             assert_eq!(group.report.len, 5 + 3 * group.labels.len());
+            if let Some(defaults) = group.defaults {
+                assert_eq!(defaults.len(), group.labels.len());
+            }
         }
     }
 
@@ -610,8 +635,8 @@ mod tests {
         let changed = with_shortcut(&easyzone(), &EASYZONE_KEYS, 5, 0b0100, 0x1e).unwrap();
         assert!(checksum_ok(&changed));
         assert_eq!(describe(bindings(&changed, 20).unwrap()[5]), "shortcut Ctrl+1");
-        assert_eq!(with_easyzone_default(&changed, 5).unwrap(), easyzone());
-        assert_eq!(with_easyzone_default(&changed, 20), None);
+        assert_eq!(with_default(&changed, &EASYZONE_KEYS, 5).unwrap(), easyzone());
+        assert_eq!(with_default(&changed, &EASYZONE_KEYS, 20), None);
     }
 
     #[test]
@@ -628,5 +653,30 @@ mod tests {
         assert_eq!(found("Shift+P"), None);
         assert_eq!(found("Shift+"), None);
         assert_eq!(found("Shift+ä"), None);
+    }
+
+    #[test]
+    fn find_key_names_f_keys_and_media_keys() {
+        let found = |label| find_key(label).map(|(g, i)| (g.report.id, i));
+        assert_eq!(found("F1"), Some((0x08, 0)));
+        assert_eq!(found("f12"), Some((0x08, 11)));
+        assert_eq!(found("Mute"), Some((0x0a, 0)));
+        assert_eq!(found("volup"), Some((0x0a, 2)));
+        assert_eq!(found("Computer"), Some((0x0a, 7)));
+        assert_eq!(found("F13"), None);
+    }
+
+    #[test]
+    fn media_default_restores_profile_3_bytes() {
+        // Real profile 3 media report from the backup.
+        let original = [
+            0x0a, 0x1d, 0x02, 0xa0, 0xa2, 0xa1, 0xa4, 0xa5, 0xa6, 0xa8, 0xa9, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0x4c, 0x05,
+        ];
+        assert!(valid_profile_report(&KEYS_MEDIA, 2, &original));
+        let changed = with_shortcut(&original, &MEDIA_KEYS, 0, 0, 0x3e).unwrap();
+        assert_eq!(describe(bindings(&changed, 8).unwrap()[0]), "shortcut F5");
+        assert_eq!(with_default(&changed, &MEDIA_KEYS, 0).unwrap(), original);
+        assert_eq!(with_default(&changed, &THUMB_KEYS, 0), None);
     }
 }

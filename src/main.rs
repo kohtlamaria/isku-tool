@@ -3,14 +3,15 @@
 //! cargo run -- set 2 T1 7           set a thumb key on profile 2
 //! cargo run -- set 2 T1 Ctrl+F5     keys can be letters, F-keys, Space and so on
 //! cargo run -- set 2 Shift+Q Ctrl+1  Easy-Shift zone keys and M keys work the same way
-//! cargo run -- set 2 Shift+Q default put an Easy-Shift zone key back to normal
+//! cargo run -- set 2 F5 Ctrl+1      F1-F12 and media keys (Mute, VolUp...) too
+//! cargo run -- set 2 Shift+Q default put a zone, F- or media key back to normal
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe, describe_macro, find_key, parse_macro, parse_shortcut, profile_index,
-    shortcut_text, valid_profile_report, with_easyzone_default, with_shortcut, KeyGroup, ACTION_MACRO, EASYZONE_DEFAULTS,
+    shortcut_text, valid_profile_report, with_default, with_shortcut, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
     EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
@@ -45,8 +46,7 @@ fn show_group(
                 detail = format!("macro {}", describe_macro(&value));
             }
         }
-        let unchanged = group.first_macro_index == EASYZONE_KEYS.first_macro_index
-            && binding.action == EASYZONE_DEFAULTS[i];
+        let unchanged = group.defaults.is_some_and(|d| binding.action == d[i]);
         if !(only_changed && unchanged) {
             println!("    {label:9} {detail}");
             shown += 1;
@@ -74,6 +74,8 @@ fn show(folder: Option<&Path>) -> Result<(), String> {
         show_group(&isku, profile, &THUMB_KEYS, false, folder)?;
         show_group(&isku, profile, &MACRO_KEYS, false, folder)?;
         show_group(&isku, profile, &EASYZONE_KEYS, true, folder)?;
+        show_group(&isku, profile, &FUNCTION_KEYS, true, folder)?;
+        show_group(&isku, profile, &MEDIA_KEYS, true, folder)?;
         for report in &PROFILE_REPORTS {
             let bytes = isku.read_profile_report(profile, report)?;
             save(folder, &format!("profile-{}-{}.bin", profile + 1, report.name), &bytes)?;
@@ -116,11 +118,12 @@ fn timestamp() -> Result<u64, String> {
 fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     let profile = profile_index(profile).ok_or("use a profile number, 1 to 5")?;
     let (group, position) = find_key(label).ok_or(
-        "use T1-T3, M1-M5, or with Easy-Shift: Shift+T1, Shift+M1, Shift+Q and the rest of the zone",
+        "use T1-T3, M1-M5, F1-F12, Mute, VolDown, VolUp, Play, Prev, Next, WWW, Computer, \
+         or with Easy-Shift: Shift+T1, Shift+M1, Shift+Q and the rest of the zone",
     )?;
     let reset = value.eq_ignore_ascii_case("default");
-    if reset && group.report.id != EASYZONE_KEYS.report.id {
-        return Err("default only works for Easy-Shift zone keys, use restore for the others".into());
+    if reset && group.defaults.is_none() {
+        return Err("default only works for zone, F- and media keys, use restore for the others".into());
     }
     let shortcut = if reset {
         None
@@ -152,7 +155,7 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
             with_shortcut(&current, group, position, modifier, key),
             shortcut_text(modifier, key),
         ),
-        None => (with_easyzone_default(&current, position), "back to normal".to_string()),
+        None => (with_default(&current, group, position), "back to normal".to_string()),
     };
     let updated = updated.ok_or("bad key report")?;
     isku.write_profile_report(profile, &group.report, &updated)?;
