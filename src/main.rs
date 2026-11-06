@@ -6,12 +6,13 @@
 //! cargo run -- set 2 F5 Ctrl+1      F1-F12 and media keys (Mute, VolUp...) too
 //! cargo run -- set 2 Shift+Q default put a zone, F- or media key back to normal
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
+//! cargo run -- reset 2             put profile 2's keys back to factory settings
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe, describe_macro, find_key, parse_macro, parse_shortcut, profile_index,
-    shortcut_text, valid_profile_report, with_default, with_shortcut, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
+    shortcut_text, valid_profile_report, with_all_defaults, with_capslock, with_default, with_shortcut, CAPSLOCK_DEFAULT, KEYS_CAPSLOCK, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
     EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
@@ -195,6 +196,41 @@ fn restore(folder: &str, profile: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn reset(number: &str) -> Result<(), String> {
+    let profile = profile_index(number).ok_or("use a profile number, 1 to 5")?;
+    let isku = Isku::open()?;
+
+    // Save the whole profile first, so `restore` can undo the reset.
+    let folder = new_backup_folder()?;
+    for report in &PROFILE_REPORTS {
+        let bytes = isku.read_profile_report(profile, report)?;
+        save(Some(&folder), &format!("profile-{}-{}.bin", profile + 1, report.name), &bytes)?;
+    }
+    println!("Saved profile {} to {}", profile + 1, folder.display());
+
+    let mut changed = 0;
+    for group in [&EASYZONE_KEYS, &FUNCTION_KEYS, &MEDIA_KEYS] {
+        let current = isku.read_profile_report(profile, &group.report)?;
+        let updated = with_all_defaults(&current, group).ok_or("bad key report")?;
+        if updated != current {
+            isku.write_profile_report(profile, &group.report, &updated)?;
+            println!("Reset {}", group.title);
+            changed += 1;
+        }
+    }
+    let current = isku.read_profile_report(profile, &KEYS_CAPSLOCK)?;
+    let updated = with_capslock(&current, CAPSLOCK_DEFAULT).ok_or("bad Caps Lock report")?;
+    if updated != current {
+        isku.write_profile_report(profile, &KEYS_CAPSLOCK, &updated)?;
+        println!("Reset Caps Lock to Easy-Shift");
+        changed += 1;
+    }
+
+    println!("Profile {}: {changed} groups reset. Thumb and M keys left as they were.", profile + 1);
+    println!("Undo with: cargo run -- restore {} {}", folder.display(), profile + 1);
+    Ok(())
+}
+
 fn activate(number: &str) -> Result<(), String> {
     let profile = profile_index(number).ok_or("use a profile number, 1 to 5")?;
     Isku::open()?.activate_profile(profile)?;
@@ -211,8 +247,9 @@ fn main() -> Result<(), String> {
         ["set", profile, label, value] => set_key(profile, label, value),
         ["restore", folder, profile] => restore(folder, profile),
         ["activate", number] => activate(number),
+        ["reset", number] => reset(number),
         _ => Err(
-            "use: backup, set <1-5> T1 7, restore <folder> <1-5> or activate <1-5>".to_string(),
+            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5> or activate <1-5>".to_string(),
         ),
     }
 }

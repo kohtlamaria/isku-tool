@@ -414,6 +414,31 @@ pub fn find_key(label: &str) -> Option<(&'static KeyGroup, usize)> {
     Some((&EASYZONE_KEYS, i))
 }
 
+/// Returns a copy of a key report with every key put back to normal, for
+/// groups that have defaults.
+pub fn with_all_defaults(report: &[u8], group: &KeyGroup) -> Option<Vec<u8>> {
+    let mut updated = report.to_vec();
+    for position in 0..group.labels.len() {
+        updated = with_default(&updated, group, position)?;
+    }
+    Some(updated)
+}
+
+/// Caps Lock as Easy-Shift, which is the factory setting in roccat-tools.
+pub const CAPSLOCK_DEFAULT: u8 = 0xff;
+
+/// Returns a copy of a Caps Lock report with a new action and checksum.
+pub fn with_capslock(report: &[u8], action: u8) -> Option<Vec<u8>> {
+    if report.len() != KEYS_CAPSLOCK.len || report[0] != KEYS_CAPSLOCK.id {
+        return None;
+    }
+    let mut updated = report.to_vec();
+    updated[3] = action;
+    let sum = checksum(&updated[..4]);
+    updated[4..].copy_from_slice(&sum.to_le_bytes());
+    Some(updated)
+}
+
 fn with_binding(report: &[u8], group: &KeyGroup, position: usize, binding: Binding) -> Option<Vec<u8>> {
     let keys = group.labels.len();
     if position >= keys || report.len() != group.report.len {
@@ -678,5 +703,26 @@ mod tests {
         assert_eq!(describe(bindings(&changed, 8).unwrap()[0]), "shortcut F5");
         assert_eq!(with_default(&changed, &MEDIA_KEYS, 0).unwrap(), original);
         assert_eq!(with_default(&changed, &THUMB_KEYS, 0), None);
+    }
+
+    #[test]
+    fn all_defaults_resets_every_key_in_a_group() {
+        let mut changed = with_shortcut(&easyzone(), &EASYZONE_KEYS, 0, 0b0100, 0x1e).unwrap();
+        changed = with_shortcut(&changed, &EASYZONE_KEYS, 19, 0, 0x3e).unwrap();
+        assert_eq!(with_all_defaults(&changed, &EASYZONE_KEYS).unwrap(), easyzone());
+        assert_eq!(with_all_defaults(&THUMBSTER, &THUMB_KEYS), None);
+    }
+
+    #[test]
+    fn capslock_matches_real_reports() {
+        // Profile 1 had 8c and profile 5 had ff in the backup.
+        let profile_5 = [0x13, 0x06, 0x04, 0xff, 0x1c, 0x01];
+        let mut from_8c = CAPSLOCK;
+        from_8c[2] = 0x04;
+        let sum = checksum(&from_8c[..4]);
+        from_8c[4..].copy_from_slice(&sum.to_le_bytes());
+        assert_eq!(with_capslock(&from_8c, CAPSLOCK_DEFAULT).unwrap(), profile_5);
+        assert!(valid_profile_report(&KEYS_CAPSLOCK, 4, &profile_5));
+        assert_eq!(with_capslock(&THUMBSTER, CAPSLOCK_DEFAULT), None);
     }
 }

@@ -25,6 +25,7 @@ other front end can reuse it later. Every write is checked and read back, and
                                       # Play, Prev, Next, WWW, Computer
     cargo run -- set 2 Shift+Q default  # put a zone, F- or media key back to normal
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
+    cargo run -- reset 2              # zone, F-, media and Caps Lock back to factory
     cargo run -- activate <1-5>       # switch the active profile
 
 Report formats come from the Linux driver and roccat-tools, both GPL. Check the
