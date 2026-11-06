@@ -29,6 +29,7 @@ other front end can reuse it later. Every write is checked and read back, and
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
     cargo run -- light 2 default      # factory lighting: 3, dims to 1 after 15 min
+    cargo run -- undo                 # put back the last set or light change, run again to go further back
     cargo run -- activate <1-5>       # switch the active profile
 
 Report formats come from the Linux driver and roccat-tools, both GPL. Check the

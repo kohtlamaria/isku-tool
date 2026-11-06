@@ -10,15 +10,17 @@
 //! cargo run -- reset 2             put profile 2's keys and lighting back to factory settings
 //! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
 //! cargo run -- light 2 default      factory lighting
+//! cargo run -- undo                 put back the last set or light change
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    action_code, bindings, describe, describe_light, describe_macro, find_key, parse_light,
-    parse_macro, parse_shortcut, profile_index, shortcut_text, valid_profile_report, with_action,
-    with_all_defaults, with_capslock, with_default, with_light, with_shortcut, KeyGroup, Light,
-    ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET,
-    LIGHT, LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    action_code, bindings, describe, describe_light, describe_macro, find_key, parse_change_name,
+    parse_light, parse_macro, parse_shortcut, profile_index, shortcut_text, valid_profile_report,
+    with_action, with_all_defaults, with_capslock, with_default, with_light, with_shortcut,
+    KeyGroup, Light, ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, INFO,
+    KEYS_CAPSLOCK, LAST_SET, LIGHT, LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT,
+    PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -387,6 +389,47 @@ fn set_light(number: &str, setting: &str, value: Option<&str>) -> Result<(), Str
     Ok(())
 }
 
+/// Puts back the most recent change made by `set` or `light` that has not been
+/// undone yet. The used change file is renamed to `.undone`.
+fn undo() -> Result<(), String> {
+    let folder = PathBuf::from("backups").join("changes");
+    let newest = fs::read_dir(&folder)
+        .map_err(|_| "no changes to undo".to_string())?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            parse_change_name(&name).map(|(time, profile, report)| (time, name, profile, report))
+        })
+        .max_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)))
+        .ok_or("no changes to undo")?;
+    let (_, name, profile, report) = newest;
+    let path = folder.join(&name);
+    let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !valid_profile_report(&report, profile, &bytes) {
+        return Err(format!("{} is not a valid saved report", path.display()));
+    }
+
+    let isku = Isku::open()?;
+    if isku.read_profile_report(profile, &report)? == bytes {
+        println!(
+            "Profile {}: {} already matches, nothing to write.",
+            profile + 1,
+            report.name
+        );
+    } else {
+        isku.write_profile_report(profile, &report, &bytes)?;
+        println!(
+            "Profile {}: {} put back. Read back and confirmed.",
+            profile + 1,
+            report.name
+        );
+    }
+    let done = folder.join(format!("{name}.undone"));
+    fs::rename(&path, &done).map_err(|e| e.to_string())?;
+    println!("Undid {name}");
+    Ok(())
+}
+
 fn activate(number: &str) -> Result<(), String> {
     let profile = profile_index(number).ok_or("use a profile number, 1 to 5")?;
     Isku::open()?.activate_profile(profile)?;
@@ -404,10 +447,11 @@ fn main() -> Result<(), String> {
         ["restore", folder, profile] => restore(folder, profile),
         ["activate", number] => activate(number),
         ["reset", number] => reset(number),
+        ["undo"] => undo(),
         ["light", number, setting] => set_light(number, setting, None),
         ["light", number, setting, value] => set_light(number, setting, Some(value)),
         _ => Err(
-            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, light <1-5> ... or activate <1-5>".to_string(),
+            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, undo, light <1-5> ... or activate <1-5>".to_string(),
         ),
     }
 }

@@ -516,6 +516,17 @@ pub const ACTIONS: &[(&str, u8)] = &[
     ("easyshift", 0xff),
 ];
 
+/// Reads a change file name like `1793997539-profile-5-keys_easyzone.bin`
+/// into its time, profile (counted from 0) and report.
+pub fn parse_change_name(name: &str) -> Option<(u64, u8, Report)> {
+    let rest = name.strip_suffix(".bin")?;
+    let (time, rest) = rest.split_once("-profile-")?;
+    let (profile, report_name) = rest.split_once('-')?;
+    let profile = profile_index(profile)?;
+    let report = *PROFILE_REPORTS.iter().find(|r| r.name == report_name)?;
+    Some((time.parse().ok()?, profile, report))
+}
+
 pub fn action_code(name: &str) -> Option<u8> {
     ACTIONS
         .iter()
@@ -1141,5 +1152,28 @@ mod tests {
             "profile cycle (0xb2)"
         );
         assert_eq!(with_action(&THUMBSTER, &THUMB_KEYS, 2, 0x81), None);
+    }
+
+    #[test]
+    fn parse_change_name_reads_real_names() {
+        let (time, profile, report) =
+            parse_change_name("1793997539-profile-5-keys_easyzone.bin").unwrap();
+        assert_eq!(
+            (time, profile, report.id),
+            (1793997539, 4, KEYS_EASYZONE.id)
+        );
+        assert_eq!(
+            parse_change_name("1-profile-2-light.bin").unwrap().2.id,
+            LIGHT.id
+        );
+        for bad in [
+            "1793997539-profile-5-keys_easyzone.bin.undone",
+            "1793997539-profile-6-light.bin",
+            "1793997539-profile-5-firmware.bin",
+            "x-profile-5-light.bin",
+            "notes.txt",
+        ] {
+            assert!(parse_change_name(bad).is_none(), "{bad}");
+        }
     }
 }
