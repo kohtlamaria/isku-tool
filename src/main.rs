@@ -2,13 +2,15 @@
 //! cargo run -- backup               show them and save them to backups/
 //! cargo run -- set 2 T1 7           set a thumb key on profile 2
 //! cargo run -- set 2 T1 Ctrl+F5     keys can be letters, F-keys, Space and so on
+//! cargo run -- set 2 Shift+Q Ctrl+1  Easy-Shift zone keys and M keys work the same way
+//! cargo run -- set 2 Shift+Q default put an Easy-Shift zone key back to normal
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe, describe_macro, parse_macro, parse_shortcut, profile_index,
-    shortcut_text, valid_profile_report, with_shortcut, KeyGroup, ACTION_MACRO, EASYZONE_DEFAULTS,
+    bindings, describe, describe_macro, find_key, parse_macro, parse_shortcut, profile_index,
+    shortcut_text, valid_profile_report, with_easyzone_default, with_shortcut, KeyGroup, ACTION_MACRO, EASYZONE_DEFAULTS,
     EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
@@ -111,22 +113,28 @@ fn timestamp() -> Result<u64, String> {
         .map_err(|e| e.to_string())
 }
 
-fn set_thumb_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
+fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     let profile = profile_index(profile).ok_or("use a profile number, 1 to 5")?;
-    let position = THUMB_KEYS
-        .labels
-        .iter()
-        .position(|l| l.eq_ignore_ascii_case(label))
-        .ok_or("use T1, T2, T3, Shift+T1, Shift+T2 or Shift+T3")?;
-    let (modifier, key) = parse_shortcut(value).ok_or(
-        "use a key like 7, Q, F5, Space or Num1, optionally with Ctrl+, Shift+, Alt+ or Win+",
+    let (group, position) = find_key(label).ok_or(
+        "use T1-T3, M1-M5, or with Easy-Shift: Shift+T1, Shift+M1, Shift+Q and the rest of the zone",
     )?;
+    let reset = value.eq_ignore_ascii_case("default");
+    if reset && group.report.id != EASYZONE_KEYS.report.id {
+        return Err("default only works for Easy-Shift zone keys, use restore for the others".into());
+    }
+    let shortcut = if reset {
+        None
+    } else {
+        Some(parse_shortcut(value).ok_or(
+            "use a key like 7, Q, F5, Space or Num1, optionally with Ctrl+, Shift+, Alt+ or Win+",
+        )?)
+    };
     if !has_backup(profile) {
         return Err(format!("no backup of profile {} found, run: cargo run -- backup", profile + 1));
     }
 
     let isku = Isku::open()?;
-    let current = isku.read_profile_report(profile, &THUMB_KEYS.report)?;
+    let current = isku.read_profile_report(profile, &group.report)?;
 
     // Keep the exact bytes from just before this change, so it can be undone.
     let undo = PathBuf::from("backups").join("changes");
@@ -135,19 +143,25 @@ fn set_thumb_key(profile: &str, label: &str, value: &str) -> Result<(), String> 
         "{}-profile-{}-{}.bin",
         timestamp()?,
         profile + 1,
-        THUMB_KEYS.report.name
+        group.report.name
     ));
     fs::write(&undo_file, &current).map_err(|e| e.to_string())?;
 
-    let updated =
-        with_shortcut(&current, &THUMB_KEYS, position, modifier, key).ok_or("bad key report")?;
-    isku.write_profile_report(profile, &THUMB_KEYS.report, &updated)?;
-    println!(
-        "Profile {}: {} is now {}. Read back and confirmed.",
-        profile + 1,
-        THUMB_KEYS.labels[position],
-        shortcut_text(modifier, key)
-    );
+    let (updated, text) = match shortcut {
+        Some((modifier, key)) => (
+            with_shortcut(&current, group, position, modifier, key),
+            shortcut_text(modifier, key),
+        ),
+        None => (with_easyzone_default(&current, position), "back to normal".to_string()),
+    };
+    let updated = updated.ok_or("bad key report")?;
+    isku.write_profile_report(profile, &group.report, &updated)?;
+    let name = if group.report.id == EASYZONE_KEYS.report.id {
+        format!("Shift+{}", group.labels[position])
+    } else {
+        group.labels[position].to_string()
+    };
+    println!("Profile {}: {name} is now {text}. Read back and confirmed.", profile + 1);
     println!("Before this change: {}", undo_file.display());
     Ok(())
 }
@@ -191,7 +205,7 @@ fn main() -> Result<(), String> {
     match args.as_slice() {
         [] => show(None),
         ["backup"] => show(Some(&new_backup_folder()?)),
-        ["set", profile, label, value] => set_thumb_key(profile, label, value),
+        ["set", profile, label, value] => set_key(profile, label, value),
         ["restore", folder, profile] => restore(folder, profile),
         ["activate", number] => activate(number),
         _ => Err(

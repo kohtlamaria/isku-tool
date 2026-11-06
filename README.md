@@ -20,6 +20,8 @@ other front end can reuse it later. Every write is checked and read back, and
     cargo run -- backup   # also saves them to backups/
     cargo run -- set 2 T1 7           # thumb key on profile 2
     cargo run -- set 2 T1 Ctrl+F5     # letters, F1-F24, Space, Num1, with Ctrl/Shift/Alt/Win
+    cargo run -- set 2 Shift+Q Ctrl+1 # Easy-Shift zone and M keys work the same way
+    cargo run -- set 2 Shift+Q default  # put an Easy-Shift zone key back to normal
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- activate <1-5>       # switch the active profile
 

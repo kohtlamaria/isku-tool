@@ -369,6 +369,29 @@ pub fn with_shortcut(
     with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier, key })
 }
 
+/// Returns a copy of an Easy-Shift zone report with one key put back to
+/// normal: its own key code as the action, as the keyboard stores unchanged keys.
+pub fn with_easyzone_default(report: &[u8], position: usize) -> Option<Vec<u8>> {
+    let action = *EASYZONE_DEFAULTS.get(position)?;
+    with_binding(report, &EASYZONE_KEYS, position, Binding { action, modifier: 0, key: 0 })
+}
+
+/// Finds a settable key by name: `T1`, `Shift+T1`, `M1`, `Shift+M1`, or an
+/// Easy-Shift zone key such as `Shift+Q`.
+pub fn find_key(label: &str) -> Option<(&'static KeyGroup, usize)> {
+    for group in [&THUMB_KEYS, &MACRO_KEYS] {
+        if let Some(i) = group.labels.iter().position(|l| l.eq_ignore_ascii_case(label)) {
+            return Some((group, i));
+        }
+    }
+    let (prefix, key) = label.split_at_checked(6)?;
+    if !prefix.eq_ignore_ascii_case("Shift+") {
+        return None;
+    }
+    let i = EASYZONE_KEYS.labels.iter().position(|l| l.eq_ignore_ascii_case(key))?;
+    Some((&EASYZONE_KEYS, i))
+}
+
 fn with_binding(report: &[u8], group: &KeyGroup, position: usize, binding: Binding) -> Option<Vec<u8>> {
     let keys = group.labels.len();
     if position >= keys || report.len() != group.report.len {
@@ -394,6 +417,15 @@ mod tests {
         0x87, 0x04,
     ];
     const CAPSLOCK: [u8; 6] = [0x13, 0x06, 0x00, 0x8c, 0xa5, 0x00];
+
+    // Profile 1 Easy-Shift zone, unchanged keys, from the same dump.
+    fn easyzone() -> Vec<u8> {
+        let mut report = vec![0x09, 0x41, 0x00];
+        report.extend_from_slice(&EASYZONE_DEFAULTS);
+        report.extend_from_slice(&[0; 40]);
+        report.extend_from_slice(&[0xdc, 0x01]);
+        report
+    }
 
     fn macro_report(name: &str, strokes: &[(u8, u8)]) -> Vec<u8> {
         let mut report = vec![0u8; FEATURE_BUFFER_LEN];
@@ -566,5 +598,35 @@ mod tests {
         assert_eq!(profile_index("0"), None);
         assert_eq!(profile_index("6"), None);
         assert_eq!(profile_index("x"), None);
+    }
+
+    #[test]
+    fn easyzone_sample_matches_the_dump() {
+        assert!(valid_profile_report(&KEYS_EASYZONE, 0, &easyzone()));
+    }
+
+    #[test]
+    fn easyzone_default_undoes_a_shortcut() {
+        let changed = with_shortcut(&easyzone(), &EASYZONE_KEYS, 5, 0b0100, 0x1e).unwrap();
+        assert!(checksum_ok(&changed));
+        assert_eq!(describe(bindings(&changed, 20).unwrap()[5]), "shortcut Ctrl+1");
+        assert_eq!(with_easyzone_default(&changed, 5).unwrap(), easyzone());
+        assert_eq!(with_easyzone_default(&changed, 20), None);
+    }
+
+    #[test]
+    fn find_key_names_each_group() {
+        let found = |label| find_key(label).map(|(g, i)| (g.report.id, i));
+        assert_eq!(found("T1"), Some((0x0b, 0)));
+        assert_eq!(found("shift+t3"), Some((0x0b, 5)));
+        assert_eq!(found("M5"), Some((0x0d, 4)));
+        assert_eq!(found("Shift+M1"), Some((0x0d, 5)));
+        assert_eq!(found("Shift+Q"), Some((0x09, 5)));
+        assert_eq!(found("Shift+1"), Some((0x09, 0)));
+        assert_eq!(found("shift+b"), Some((0x09, 19)));
+        assert_eq!(found("Q"), None);
+        assert_eq!(found("Shift+P"), None);
+        assert_eq!(found("Shift+"), None);
+        assert_eq!(found("Shift+ä"), None);
     }
 }
