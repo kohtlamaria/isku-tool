@@ -10,10 +10,14 @@ keys and the Easy-Shift zone.
 - `dumps/`: raw results to compare against
 - `backups/`: profile backups, kept out of git by default
 
-`src/` is a Rust command-line tool that reads the settings from the keyboard.
-`src/protocol.rs` holds the report format and has no USB code, so a Tauri or
-other front end can reuse it later. Every write is checked and read back, and
-`set` keeps the bytes from before each change in `backups/changes/`.
+`src/` is a Rust command-line tool for the keyboard's settings:
+
+- `protocol/` holds the report format, with no USB code, so a Tauri or other
+  front end can reuse it later. `mod.rs` has the report table and checksums;
+  `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area.
+- `device.rs` talks to the keyboard. Every write is checked and read back.
+- `commands/` has one file per command, and `main.rs` only reads the arguments.
+- `set` and `light` keep the bytes from before each change in `backups/changes/`.
 
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
