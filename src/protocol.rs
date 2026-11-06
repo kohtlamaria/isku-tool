@@ -266,6 +266,56 @@ pub fn describe_macro(value: &Macro) -> String {
     format!("\"{}\": {}{suffix}", value.name, steps.join(", "))
 }
 
+/// Builds the "make this the active profile" command.
+pub fn actual_profile_report(profile: u8) -> Option<[u8; 3]> {
+    (profile < PROFILE_COUNT).then_some([ACTUAL_PROFILE.id, 3, profile])
+}
+
+/// Turns a profile number as people count it, 1 to 5, into the keyboard's 0 to 4.
+pub fn profile_index(number: &str) -> Option<u8> {
+    let number: u8 = number.parse().ok()?;
+    (1..=PROFILE_COUNT).contains(&number).then(|| number - 1)
+}
+
+/// The HID code for a number key.
+pub fn digit_key(digit: char) -> Option<u8> {
+    match digit {
+        '1'..='9' => Some(0x1e + digit as u8 - b'1'),
+        '0' => Some(0x27),
+        _ => None,
+    }
+}
+
+/// True when bytes are a complete, correct report for this profile.
+pub fn valid_profile_report(report: &Report, profile: u8, bytes: &[u8]) -> bool {
+    bytes.len() == report.len
+        && bytes[0] == report.id
+        && usize::from(bytes[1]) == report.len
+        && bytes[2] == profile
+        && checksum_ok(bytes)
+}
+
+/// Returns a copy of a key report with one key set to a plain shortcut, without
+/// a modifier, and the checksum updated.
+pub fn with_shortcut(report: &[u8], group: &KeyGroup, position: usize, key: u8) -> Option<Vec<u8>> {
+    with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier: 0, key })
+}
+
+fn with_binding(report: &[u8], group: &KeyGroup, position: usize, binding: Binding) -> Option<Vec<u8>> {
+    let keys = group.labels.len();
+    if position >= keys || report.len() != group.report.len {
+        return None;
+    }
+    let mut updated = report.to_vec();
+    updated[3 + position] = binding.action;
+    updated[3 + keys + position] = binding.modifier;
+    updated[3 + 2 * keys + position] = binding.key;
+    let body = updated.len() - 2;
+    let sum = checksum(&updated[..body]);
+    updated[body..].copy_from_slice(&sum.to_le_bytes());
+    Some(updated)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -378,5 +428,53 @@ mod tests {
         let mut report = macro_report("Slot 1", &[(0x1e, 1)]);
         report[100] ^= 0xff;
         assert_eq!(parse_macro(&report), None);
+    }
+
+    #[test]
+    fn with_shortcut_changes_one_key_and_keeps_the_report_valid() {
+        let updated = with_shortcut(&THUMBSTER, &THUMB_KEYS, 0, 0x24).unwrap();
+        assert!(checksum_ok(&updated));
+        let keys = bindings(&updated, 6).unwrap();
+        assert_eq!(keys[0], Binding { action: ACTION_SHORTCUT, modifier: 0, key: 0x24 });
+        assert_eq!(keys[1], bindings(&THUMBSTER, 6).unwrap()[1]);
+        assert_eq!(describe(keys[0]), "shortcut 7");
+    }
+
+    #[test]
+    fn with_shortcut_refuses_a_key_outside_the_group() {
+        assert_eq!(with_shortcut(&THUMBSTER, &THUMB_KEYS, 6, 0x24), None);
+    }
+
+    #[test]
+    fn valid_profile_report_checks_every_field() {
+        assert!(valid_profile_report(&KEYS_THUMBSTER, 0, &THUMBSTER));
+        assert!(!valid_profile_report(&KEYS_THUMBSTER, 4, &THUMBSTER));
+        assert!(!valid_profile_report(&KEYS_MACRO, 0, &THUMBSTER));
+        let mut changed = THUMBSTER;
+        changed[3] = 0x1e;
+        assert!(!valid_profile_report(&KEYS_THUMBSTER, 0, &changed));
+    }
+
+    #[test]
+    fn digit_keys_map_to_hid_codes() {
+        assert_eq!(digit_key('1'), Some(0x1e));
+        assert_eq!(digit_key('9'), Some(0x26));
+        assert_eq!(digit_key('0'), Some(0x27));
+        assert_eq!(digit_key('x'), None);
+    }
+
+    #[test]
+    fn actual_profile_report_refuses_a_missing_profile() {
+        assert_eq!(actual_profile_report(4), Some([0x05, 3, 4]));
+        assert_eq!(actual_profile_report(5), None);
+    }
+
+    #[test]
+    fn profile_index_counts_from_one() {
+        assert_eq!(profile_index("1"), Some(0));
+        assert_eq!(profile_index("5"), Some(4));
+        assert_eq!(profile_index("0"), None);
+        assert_eq!(profile_index("6"), None);
+        assert_eq!(profile_index("x"), None);
     }
 }

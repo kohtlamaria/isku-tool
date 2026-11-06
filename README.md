@@ -12,12 +12,15 @@ keys and the Easy-Shift zone.
 
 `src/` is a Rust command-line tool that reads the settings from the keyboard.
 `src/protocol.rs` holds the report format and has no USB code, so a Tauri or
-other front end can reuse it later. `src/device.rs` can only send the select
-command, so it cannot change keys.
+other front end can reuse it later. Every write is checked and read back, and
+`set` keeps the bytes from before each change in `backups/changes/`.
 
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
     cargo run -- backup   # also saves them to backups/
+    cargo run -- set 2 T1 7           # thumb key on profile 2 to a number
+    cargo run -- restore <folder> 2   # put profile 2 back from a backup
+    cargo run -- activate <1-5>       # switch the active profile
 
 Report formats come from the Linux driver and roccat-tools, both GPL. Check the
 licence before publishing this.

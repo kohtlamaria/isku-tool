@@ -25,7 +25,8 @@ here. Guess = fits the data, not proven.
 
 ## Selecting a profile
 
-Source: roccat-tools (`isku.h`, `roccat_control.c`). First real run still pending.
+Source: roccat-tools (`isku.h`, `roccat_control.c`). Confirmed on our keyboard:
+all 5 profiles and 47 macros read with valid checksums.
 
 - Send feature report `04 <profile 0-4> <request>`, wait 110 ms, then read
   report 0x04 until byte 1 is 1 (OK). 3 means busy. Anything else is an error.
@@ -73,8 +74,28 @@ Keystroke action: 1 press, 2 release.
 - 0x0f info: byte 2 firmware version, byte 3 DFU version.
 - 0x11 reset, 0x1b and 0x1c firmware: never used here.
 
+## Writing
+
+Source: roccat-tools. Not yet tried on our keyboard.
+
+- A key report is written as a whole: id, size, profile, the three arrays,
+  checksum. Then wait for status OK, as with select.
+- 0x05 actual_profile is written as `05 03 <profile>`.
+
+Confirmed: the old software stored number bindings as macros with a press and a
+release. For a Shortcut (b8) binding, roccat-tools stores the key and modifier in
+the arrays, with no macro needed.
+
+Confirmed on Profile 5: writing T1 as a b8 shortcut for key 7 was accepted,
+read back the same, and typed 7. Holding it gives one 7, the same as the old
+macros, so neither repeats while held.
+
+Tried on Profile 5: a plain HID code (24, key 7) as T1's action was accepted
+and read back, but T1 then did nothing. Thumb keys only take Roccat actions, so
+they cannot hold a key down.
+
+Writes are now allowed to any profile, after a backup.
+
 ## Next questions
 
-1. Run the select on real hardware and read all 5 profiles.
-2. Confirm what an old number binding looks like, macro or plain key.
-3. Change one known key on a spare profile and compare the bytes.
+1. Easy-Shift zone: does a b8 shortcut work there the same way?
