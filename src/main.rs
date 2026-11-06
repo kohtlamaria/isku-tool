@@ -6,13 +6,15 @@
 //! cargo run -- set 2 F5 Ctrl+1      F1-F12 and media keys (Mute, VolUp...) too
 //! cargo run -- set 2 Shift+Q default put a zone, F- or media key back to normal
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
-//! cargo run -- reset 2             put profile 2's keys back to factory settings
+//! cargo run -- reset 2             put profile 2's keys and lighting back to factory settings
+//! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
+//! cargo run -- light 2 default      factory lighting
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe, describe_macro, find_key, parse_macro, parse_shortcut, profile_index,
-    shortcut_text, valid_profile_report, with_all_defaults, with_capslock, with_default, with_shortcut, CAPSLOCK_DEFAULT, KEYS_CAPSLOCK, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
+    shortcut_text, valid_profile_report, with_all_defaults, with_capslock, with_default, with_shortcut, CAPSLOCK_DEFAULT, KEYS_CAPSLOCK, describe_light, parse_light, with_light, Light, LIGHT, LIGHT_DEFAULT, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
     EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
@@ -77,6 +79,9 @@ fn show(folder: Option<&Path>) -> Result<(), String> {
         show_group(&isku, profile, &EASYZONE_KEYS, true, folder)?;
         show_group(&isku, profile, &FUNCTION_KEYS, true, folder)?;
         show_group(&isku, profile, &MEDIA_KEYS, true, folder)?;
+        if let Some(light) = parse_light(&isku.read_profile_report(profile, &LIGHT)?) {
+            println!("  Lighting: {}", describe_light(light));
+        }
         for report in &PROFILE_REPORTS {
             let bytes = isku.read_profile_report(profile, report)?;
             save(folder, &format!("profile-{}-{}.bin", profile + 1, report.name), &bytes)?;
@@ -225,9 +230,58 @@ fn reset(number: &str) -> Result<(), String> {
         println!("Reset Caps Lock to Easy-Shift");
         changed += 1;
     }
+    let current = isku.read_profile_report(profile, &LIGHT)?;
+    let updated = with_light(&current, LIGHT_DEFAULT).ok_or("bad light report")?;
+    if updated != current {
+        isku.write_profile_report(profile, &LIGHT, &updated)?;
+        println!("Reset lighting to {}", describe_light(LIGHT_DEFAULT));
+        changed += 1;
+    }
 
     println!("Profile {}: {changed} groups reset. Thumb and M keys left as they were.", profile + 1);
     println!("Undo with: cargo run -- restore {} {}", folder.display(), profile + 1);
+    Ok(())
+}
+
+fn set_light(number: &str, setting: &str, value: Option<&str>) -> Result<(), String> {
+    let profile = profile_index(number).ok_or("use a profile number, 1 to 5")?;
+    if !has_backup(profile) {
+        return Err(format!("no backup of profile {} found, run: cargo run -- backup", profile + 1));
+    }
+    let isku = Isku::open()?;
+    let current = isku.read_profile_report(profile, &LIGHT)?;
+    let light = parse_light(&current).ok_or("bad light report")?;
+
+    let number = |text: Option<&str>| -> Result<u8, String> {
+        text.and_then(|t| t.parse().ok()).ok_or_else(|| "use a whole number".to_string())
+    };
+    let wanted = match (setting.to_ascii_lowercase().as_str(), value) {
+        ("default", None) => LIGHT_DEFAULT,
+        ("brightness", _) => Light { brightness: number(value)?, ..light },
+        ("dim", _) => Light { dimness: number(value)?, ..light },
+        ("timeout", _) => Light { timeout: number(value)?, ..light },
+        _ => return Err("use: light <1-5> brightness|dim <0-5>, timeout <1-255> or default".into()),
+    };
+    let updated = with_light(&current, wanted)
+        .ok_or("brightness and dim go from 0 to 5, timeout from 1 to 255 minutes")?;
+    if updated == current {
+        println!("Profile {}: lighting already {}", profile + 1, describe_light(light));
+        return Ok(());
+    }
+
+    let undo = PathBuf::from("backups").join("changes");
+    fs::create_dir_all(&undo).map_err(|e| e.to_string())?;
+    let undo_file =
+        undo.join(format!("{}-profile-{}-{}.bin", timestamp()?, profile + 1, LIGHT.name));
+    fs::write(&undo_file, &current).map_err(|e| e.to_string())?;
+
+    isku.write_profile_report(profile, &LIGHT, &updated)?;
+    println!(
+        "Profile {}: lighting is now {}. Read back and confirmed.",
+        profile + 1,
+        describe_light(wanted)
+    );
+    println!("Before this change: {}", undo_file.display());
     Ok(())
 }
 
@@ -248,8 +302,10 @@ fn main() -> Result<(), String> {
         ["restore", folder, profile] => restore(folder, profile),
         ["activate", number] => activate(number),
         ["reset", number] => reset(number),
+        ["light", number, setting] => set_light(number, setting, None),
+        ["light", number, setting, value] => set_light(number, setting, Some(value)),
         _ => Err(
-            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5> or activate <1-5>".to_string(),
+            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, light <1-5> ... or activate <1-5>".to_string(),
         ),
     }
 }
