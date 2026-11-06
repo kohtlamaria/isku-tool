@@ -100,7 +100,15 @@ Confirmed on Profile 5: an Easy-Shift zone key (Shift+Q) written as a b8
 shortcut typed 7, and as Shift+7 typed `/` on an Estonian layout. So the zone
 takes shortcuts, and the modifier bits are right (bit 1 = Shift).
 
+Tested on Profile 5 (F11, F12, T3):
+
+- b3 (profile 1) works on an F-key: the keyboard switched profile.
+- a1 (volume up) was accepted but did nothing on T3 and F12. The a0-a9 codes
+  only work on the media key row, where Mute (a0) works.
+- d0 (volume up) was accepted but did nothing on F12. The c0-d2 range seems to
+  have relied on Roccat's software.
+
 ## Next questions
 
 1. Confirm Ctrl, Alt and Win bits the same way as Shift.
-2. M1-M5 writes are untested.
+2. M1-M5 writes, `off` (00) and `easyshift` (ff) on other keys are untested.

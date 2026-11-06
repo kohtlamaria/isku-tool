@@ -5,6 +5,7 @@
 //! cargo run -- set 2 Shift+Q Ctrl+1  Easy-Shift zone keys and M keys work the same way
 //! cargo run -- set 2 F5 Ctrl+1      F1-F12 and media keys (Mute, VolUp...) too
 //! cargo run -- set 2 Shift+Q default put a zone, F- or media key back to normal
+//! cargo run -- set 2 T3 profile-cycle  actions: off, profile-1, easyshift...
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
 //! cargo run -- reset 2             put profile 2's keys and lighting back to factory settings
 //! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
@@ -13,11 +14,11 @@
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe, describe_light, describe_macro, find_key, parse_light, parse_macro,
-    parse_shortcut, profile_index, shortcut_text, valid_profile_report, with_all_defaults,
-    with_capslock, with_default, with_light, with_shortcut, KeyGroup, Light, ACTION_MACRO,
-    CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET, LIGHT,
-    LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    action_code, bindings, describe, describe_light, describe_macro, find_key, parse_light,
+    parse_macro, parse_shortcut, profile_index, shortcut_text, valid_profile_report, with_action,
+    with_all_defaults, with_capslock, with_default, with_light, with_shortcut, KeyGroup, Light,
+    ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET,
+    LIGHT, LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -179,11 +180,14 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
             "default only works for zone, F- and media keys, use restore for the others".into(),
         );
     }
-    let shortcut = if reset {
+    let action = action_code(value);
+    let shortcut = if reset || action.is_some() {
         None
     } else {
         Some(parse_shortcut(value).ok_or(
-            "use a key like 7, Q, F5, Space or Num1, optionally with Ctrl+, Shift+, Alt+ or Win+",
+            "use a key like 7, Q, F5, Space or Num1, optionally with Ctrl+, Shift+, Alt+ or Win+, \
+             or an action: off, profile-up, profile-down, profile-cycle, profile-1 to profile-5, \
+             easyshift",
         )?)
     };
     if !has_backup(profile) {
@@ -207,12 +211,16 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     ));
     fs::write(&undo_file, &current).map_err(|e| e.to_string())?;
 
-    let (updated, text) = match shortcut {
-        Some((modifier, key)) => (
+    let (updated, text) = match (shortcut, action) {
+        (Some((modifier, key)), _) => (
             with_shortcut(&current, group, position, modifier, key),
             shortcut_text(modifier, key),
         ),
-        None => (
+        (None, Some(code)) => (
+            with_action(&current, group, position, code),
+            value.to_ascii_lowercase(),
+        ),
+        (None, None) => (
             with_default(&current, group, position),
             "back to normal".to_string(),
         ),

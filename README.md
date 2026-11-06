@@ -24,6 +24,7 @@ other front end can reuse it later. Every write is checked and read back, and
     cargo run -- set 2 F5 Ctrl+1      # F1-F12 and media keys: Mute, VolDown, VolUp,
                                       # Play, Prev, Next, WWW, Computer
     cargo run -- set 2 Shift+Q default  # put a zone, F- or media key back to normal
+    cargo run -- set 2 T3 profile-cycle # special actions, see below
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
@@ -39,3 +40,7 @@ on a spare profile. Firmware commands are never used.
 Key names follow key positions on a US layout. On an Estonian layout some
 symbol keys print something else, for example `Minus` is the + key. Letters,
 numbers and F-keys are the same.
+
+Special actions for `set`: `off`, `profile-up`, `profile-down`,
+`profile-cycle`, `profile-1` to `profile-5`, `easyshift`. Media actions only
+work on the media key row, so they are not offered for other keys.
