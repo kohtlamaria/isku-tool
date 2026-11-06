@@ -1,13 +1,14 @@
 //! cargo run                         show all 5 profiles
 //! cargo run -- backup               show them and save them to backups/
-//! cargo run -- set 2 T1 7           set a thumb key on profile 2 to a number
+//! cargo run -- set 2 T1 7           set a thumb key on profile 2
+//! cargo run -- set 2 T1 Ctrl+F5     keys can be letters, F-keys, Space and so on
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
 //! cargo run -- activate <1-5>       switch the active profile
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe, describe_macro, digit_key, parse_macro, profile_index,
-    valid_profile_report, with_shortcut, KeyGroup, ACTION_MACRO, EASYZONE_DEFAULTS,
+    bindings, describe, describe_macro, parse_macro, parse_shortcut, profile_index,
+    shortcut_text, valid_profile_report, with_shortcut, KeyGroup, ACTION_MACRO, EASYZONE_DEFAULTS,
     EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
@@ -110,19 +111,16 @@ fn timestamp() -> Result<u64, String> {
         .map_err(|e| e.to_string())
 }
 
-fn set_thumb_key(profile: &str, label: &str, digit: &str) -> Result<(), String> {
+fn set_thumb_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     let profile = profile_index(profile).ok_or("use a profile number, 1 to 5")?;
     let position = THUMB_KEYS
         .labels
         .iter()
         .position(|l| l.eq_ignore_ascii_case(label))
         .ok_or("use T1, T2, T3, Shift+T1, Shift+T2 or Shift+T3")?;
-    let mut digits = digit.chars();
-    let key = match (digits.next(), digits.next()) {
-        (Some(c), None) => digit_key(c),
-        _ => None,
-    }
-    .ok_or("use a single number key, 0 to 9")?;
+    let (modifier, key) = parse_shortcut(value).ok_or(
+        "use a key like 7, Q, F5, Space or Num1, optionally with Ctrl+, Shift+, Alt+ or Win+",
+    )?;
     if !has_backup(profile) {
         return Err(format!("no backup of profile {} found, run: cargo run -- backup", profile + 1));
     }
@@ -141,12 +139,14 @@ fn set_thumb_key(profile: &str, label: &str, digit: &str) -> Result<(), String> 
     ));
     fs::write(&undo_file, &current).map_err(|e| e.to_string())?;
 
-    let updated = with_shortcut(&current, &THUMB_KEYS, position, key).ok_or("bad key report")?;
+    let updated =
+        with_shortcut(&current, &THUMB_KEYS, position, modifier, key).ok_or("bad key report")?;
     isku.write_profile_report(profile, &THUMB_KEYS.report, &updated)?;
     println!(
-        "Profile {}: {} is now key {digit}. Read back and confirmed.",
+        "Profile {}: {} is now {}. Read back and confirmed.",
         profile + 1,
-        THUMB_KEYS.labels[position]
+        THUMB_KEYS.labels[position],
+        shortcut_text(modifier, key)
     );
     println!("Before this change: {}", undo_file.display());
     Ok(())
@@ -191,7 +191,7 @@ fn main() -> Result<(), String> {
     match args.as_slice() {
         [] => show(None),
         ["backup"] => show(Some(&new_backup_folder()?)),
-        ["set", profile, label, digit] => set_thumb_key(profile, label, digit),
+        ["set", profile, label, value] => set_thumb_key(profile, label, value),
         ["restore", folder, profile] => restore(folder, profile),
         ["activate", number] => activate(number),
         _ => Err(

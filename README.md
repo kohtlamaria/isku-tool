@@ -18,7 +18,8 @@ other front end can reuse it later. Every write is checked and read back, and
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
     cargo run -- backup   # also saves them to backups/
-    cargo run -- set 2 T1 7           # thumb key on profile 2 to a number
+    cargo run -- set 2 T1 7           # thumb key on profile 2
+    cargo run -- set 2 T1 Ctrl+F5     # letters, F1-F24, Space, Num1, with Ctrl/Shift/Alt/Win
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- activate <1-5>       # switch the active profile
 
@@ -27,3 +28,7 @@ licence before publishing this.
 
 Nothing that writes to the keyboard belongs in `main` until it has been tried
 on a spare profile. Firmware commands are never used.
+
+Key names follow key positions on a US layout. On an Estonian layout some
+symbol keys print something else, for example `Minus` is the + key. Letters,
+numbers and F-keys are the same.

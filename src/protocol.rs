@@ -133,19 +133,96 @@ pub fn bindings(report: &[u8], keys: usize) -> Option<Vec<Binding>> {
 }
 
 /// Names for HID keyboard usage codes.
+/// Named keys that are not letters, numbers or F-keys. Codes are USB HID usage
+/// IDs, which name a key's position on a US layout. On an Estonian layout the
+/// same positions print different symbols, for example Minus is the + key.
+const NAMED_KEYS: &[(u8, &str)] = &[
+    (0x28, "Enter"), (0x29, "Esc"), (0x2a, "Backspace"), (0x2b, "Tab"), (0x2c, "Space"),
+    (0x2d, "Minus"), (0x2e, "Equal"), (0x2f, "LeftBracket"), (0x30, "RightBracket"),
+    (0x31, "Backslash"), (0x33, "Semicolon"), (0x34, "Quote"), (0x35, "Grave"),
+    (0x36, "Comma"), (0x37, "Period"), (0x38, "Slash"), (0x39, "CapsLock"),
+    (0x46, "PrintScreen"), (0x47, "ScrollLock"), (0x48, "Pause"), (0x49, "Insert"),
+    (0x4a, "Home"), (0x4b, "PageUp"), (0x4c, "Delete"), (0x4d, "End"), (0x4e, "PageDown"),
+    (0x4f, "Right"), (0x50, "Left"), (0x51, "Down"), (0x52, "Up"), (0x53, "NumLock"),
+    (0x54, "NumSlash"), (0x55, "NumStar"), (0x56, "NumMinus"), (0x57, "NumPlus"),
+    (0x58, "NumEnter"), (0x63, "NumPeriod"), (0x64, "IsoBackslash"), (0x65, "Menu"),
+];
+
+/// Names for HID keyboard usage codes.
 pub fn key_name(code: u8) -> String {
     match code {
         0x04..=0x1d => char::from(b'A' + (code - 0x04)).to_string(),
         0x1e..=0x26 => (code - 0x1d).to_string(),
         0x27 => "0".to_string(),
-        0x28 => "Enter".to_string(),
-        0x29 => "Esc".to_string(),
-        0x2a => "Backspace".to_string(),
-        0x2b => "Tab".to_string(),
-        0x2c => "Space".to_string(),
         0x3a..=0x45 => format!("F{}", code - 0x39),
-        _ => format!("key 0x{code:02x}"),
+        0x59..=0x61 => format!("Num{}", code - 0x58),
+        0x62 => "Num0".to_string(),
+        0x68..=0x73 => format!("F{}", code - 0x68 + 13),
+        _ => NAMED_KEYS
+            .iter()
+            .find(|(c, _)| *c == code)
+            .map_or_else(|| format!("key 0x{code:02x}"), |(_, name)| (*name).to_string()),
     }
+}
+
+/// The HID code for a key name, ignoring case: `A`, `7`, `F5`, `Space`, `Num1`.
+pub fn key_code(name: &str) -> Option<u8> {
+    let upper = name.to_ascii_uppercase();
+    let bytes = upper.as_bytes();
+    match bytes {
+        [c @ b'A'..=b'Z'] => return Some(0x04 + (c - b'A')),
+        [c @ b'1'..=b'9'] => return Some(0x1e + (c - b'1')),
+        [b'0'] => return Some(0x27),
+        _ => {}
+    }
+    if let Some(n) = upper.strip_prefix('F').and_then(|n| n.parse::<u8>().ok()) {
+        return match n {
+            1..=12 => Some(0x39 + n),
+            13..=24 => Some(0x68 + n - 13),
+            _ => None,
+        };
+    }
+    if let Some(n) = upper.strip_prefix("NUM").and_then(|n| n.parse::<u8>().ok()) {
+        return match n {
+            0 => Some(0x62),
+            1..=9 => Some(0x58 + n),
+            _ => None,
+        };
+    }
+    NAMED_KEYS
+        .iter()
+        .find(|(_, n)| n.eq_ignore_ascii_case(name))
+        .map(|(code, _)| *code)
+}
+
+const MODIFIERS: [(u8, &str); 4] = [(2, "Ctrl"), (1, "Shift"), (3, "Alt"), (4, "Win")];
+
+/// Reads a shortcut such as `7`, `F5` or `Ctrl+Alt+Z` into a modifier mask and
+/// a key code. Each modifier may appear once, and the key comes last.
+pub fn parse_shortcut(text: &str) -> Option<(u8, u8)> {
+    let mut parts: Vec<&str> = text.split('+').collect();
+    let key = key_code(parts.pop()?)?;
+    let mut modifier = 0u8;
+    for part in parts {
+        let (bit, _) = MODIFIERS.iter().find(|(_, name)| name.eq_ignore_ascii_case(part))?;
+        if modifier & (1 << bit) != 0 {
+            return None;
+        }
+        modifier |= 1 << bit;
+    }
+    Some((modifier, key))
+}
+
+/// Writes a shortcut the way `parse_shortcut` reads it.
+pub fn shortcut_text(modifier: u8, key: u8) -> String {
+    let mut text = String::new();
+    for (bit, name) in MODIFIERS {
+        if modifier & (1 << bit) != 0 {
+            text.push_str(name);
+            text.push('+');
+        }
+    }
+    text + &key_name(key)
 }
 
 fn action_name(action: u8) -> Option<&'static str> {
@@ -186,13 +263,7 @@ fn action_name(action: u8) -> Option<&'static str> {
 
 pub fn describe(binding: Binding) -> String {
     if binding.action == ACTION_SHORTCUT {
-        let mut text = String::new();
-        for (bit, name) in [(2, "Ctrl+"), (1, "Shift+"), (3, "Alt+"), (4, "Win+")] {
-            if binding.modifier & (1 << bit) != 0 {
-                text.push_str(name);
-            }
-        }
-        return format!("shortcut {text}{}", key_name(binding.key));
+        return format!("shortcut {}", shortcut_text(binding.modifier, binding.key));
     }
     match action_name(binding.action) {
         Some(name) => format!("{name} (0x{:02x})", binding.action),
@@ -277,15 +348,6 @@ pub fn profile_index(number: &str) -> Option<u8> {
     (1..=PROFILE_COUNT).contains(&number).then(|| number - 1)
 }
 
-/// The HID code for a number key.
-pub fn digit_key(digit: char) -> Option<u8> {
-    match digit {
-        '1'..='9' => Some(0x1e + digit as u8 - b'1'),
-        '0' => Some(0x27),
-        _ => None,
-    }
-}
-
 /// True when bytes are a complete, correct report for this profile.
 pub fn valid_profile_report(report: &Report, profile: u8, bytes: &[u8]) -> bool {
     bytes.len() == report.len
@@ -295,10 +357,16 @@ pub fn valid_profile_report(report: &Report, profile: u8, bytes: &[u8]) -> bool 
         && checksum_ok(bytes)
 }
 
-/// Returns a copy of a key report with one key set to a plain shortcut, without
-/// a modifier, and the checksum updated.
-pub fn with_shortcut(report: &[u8], group: &KeyGroup, position: usize, key: u8) -> Option<Vec<u8>> {
-    with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier: 0, key })
+/// Returns a copy of a key report with one key set to a shortcut, and the
+/// checksum updated.
+pub fn with_shortcut(
+    report: &[u8],
+    group: &KeyGroup,
+    position: usize,
+    modifier: u8,
+    key: u8,
+) -> Option<Vec<u8>> {
+    with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier, key })
 }
 
 fn with_binding(report: &[u8], group: &KeyGroup, position: usize, binding: Binding) -> Option<Vec<u8>> {
@@ -432,7 +500,7 @@ mod tests {
 
     #[test]
     fn with_shortcut_changes_one_key_and_keeps_the_report_valid() {
-        let updated = with_shortcut(&THUMBSTER, &THUMB_KEYS, 0, 0x24).unwrap();
+        let updated = with_shortcut(&THUMBSTER, &THUMB_KEYS, 0, 0, 0x24).unwrap();
         assert!(checksum_ok(&updated));
         let keys = bindings(&updated, 6).unwrap();
         assert_eq!(keys[0], Binding { action: ACTION_SHORTCUT, modifier: 0, key: 0x24 });
@@ -442,7 +510,7 @@ mod tests {
 
     #[test]
     fn with_shortcut_refuses_a_key_outside_the_group() {
-        assert_eq!(with_shortcut(&THUMBSTER, &THUMB_KEYS, 6, 0x24), None);
+        assert_eq!(with_shortcut(&THUMBSTER, &THUMB_KEYS, 6, 0, 0x24), None);
     }
 
     #[test]
@@ -456,11 +524,33 @@ mod tests {
     }
 
     #[test]
-    fn digit_keys_map_to_hid_codes() {
-        assert_eq!(digit_key('1'), Some(0x1e));
-        assert_eq!(digit_key('9'), Some(0x26));
-        assert_eq!(digit_key('0'), Some(0x27));
-        assert_eq!(digit_key('x'), None);
+    fn parse_shortcut_reads_keys_and_modifiers() {
+        assert_eq!(parse_shortcut("7"), Some((0, 0x24)));
+        assert_eq!(parse_shortcut("f5"), Some((0, 0x3e)));
+        assert_eq!(parse_shortcut("Space"), Some((0, 0x2c)));
+        assert_eq!(parse_shortcut("Ctrl+1"), Some((0b0100, 0x1e)));
+        assert_eq!(parse_shortcut("ctrl+alt+z"), Some((0b1100, 0x1d)));
+        assert_eq!(parse_shortcut("Win+Shift+F24"), Some((0b10010, 0x73)));
+        assert_eq!(parse_shortcut("Num0"), Some((0, 0x62)));
+    }
+
+    #[test]
+    fn parse_shortcut_refuses_anything_unclear() {
+        for text in ["", "Ctrl+", "Ctrl+Ctrl+1", "Ctrl", "Foo", "F25", "F0", "Hyper+1", "1+Ctrl", "Num10"] {
+            assert_eq!(parse_shortcut(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn every_named_key_reads_back_as_itself() {
+        for code in (0x04..=0x65).chain(0x68..=0x73) {
+            let name = key_name(code);
+            if !name.starts_with("key ") {
+                assert_eq!(key_code(&name), Some(code), "{name}");
+            }
+        }
+        assert_eq!(shortcut_text(0b1100, 0x1d), "Ctrl+Alt+Z");
+        assert_eq!(parse_shortcut(&shortcut_text(0b11110, 0x3e)), Some((0b11110, 0x3e)));
     }
 
     #[test]
