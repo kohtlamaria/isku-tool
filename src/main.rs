@@ -13,13 +13,15 @@
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe, describe_macro, find_key, parse_macro, parse_shortcut, profile_index,
-    shortcut_text, valid_profile_report, with_all_defaults, with_capslock, with_default, with_shortcut, CAPSLOCK_DEFAULT, KEYS_CAPSLOCK, describe_light, parse_light, with_light, Light, LIGHT, LIGHT_DEFAULT, KeyGroup, ACTION_MACRO, FUNCTION_KEYS, MEDIA_KEYS,
-    EASYZONE_KEYS, INFO, LAST_SET, MACRO_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    bindings, describe, describe_light, describe_macro, find_key, parse_light, parse_macro,
+    parse_shortcut, profile_index, shortcut_text, valid_profile_report, with_all_defaults,
+    with_capslock, with_default, with_light, with_shortcut, KeyGroup, Light, ACTION_MACRO,
+    CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET, LIGHT,
+    LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 fn save(folder: Option<&Path>, name: &str, bytes: &[u8]) -> Result<(), String> {
     match folder {
@@ -32,11 +34,11 @@ fn show_group(
     isku: &Isku,
     profile: u8,
     group: &KeyGroup,
+    report: &[u8],
     only_changed: bool,
     folder: Option<&Path>,
-) -> Result<usize, String> {
-    let report = isku.read_profile_report(profile, &group.report)?;
-    let keys = bindings(&report, group.labels.len()).ok_or("key report too short")?;
+) -> Result<(), String> {
+    let keys = bindings(report, group.labels.len()).ok_or("key report too short")?;
     println!("  {}", group.title);
     let mut shown = 0;
     for (i, (label, binding)) in group.labels.iter().zip(&keys).enumerate() {
@@ -44,7 +46,11 @@ fn show_group(
         let mut detail = describe(*binding);
         if binding.action == ACTION_MACRO {
             let bytes = isku.read_macro(profile, key_index)?;
-            save(folder, &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1), &bytes)?;
+            save(
+                folder,
+                &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1),
+                &bytes,
+            )?;
             if let Some(value) = parse_macro(&bytes) {
                 detail = format!("macro {}", describe_macro(&value));
             }
@@ -58,7 +64,7 @@ fn show_group(
     if only_changed && shown == 0 {
         println!("    nothing changed from default");
     }
-    Ok(shown)
+    Ok(())
 }
 
 fn new_backup_folder() -> Result<PathBuf, String> {
@@ -68,28 +74,64 @@ fn new_backup_folder() -> Result<PathBuf, String> {
 }
 
 fn show(folder: Option<&Path>) -> Result<(), String> {
+    let started = Instant::now();
     let isku = Isku::open()?;
     let active_before = isku.active_profile()?;
 
     for profile in 0..PROFILE_COUNT {
-        let marker = if profile == active_before { " (active)" } else { "" };
+        let marker = if profile == active_before {
+            " (active)"
+        } else {
+            ""
+        };
         println!("Profile {}{marker}", profile + 1);
-        show_group(&isku, profile, &THUMB_KEYS, false, folder)?;
-        show_group(&isku, profile, &MACRO_KEYS, false, folder)?;
-        show_group(&isku, profile, &EASYZONE_KEYS, true, folder)?;
-        show_group(&isku, profile, &FUNCTION_KEYS, true, folder)?;
-        show_group(&isku, profile, &MEDIA_KEYS, true, folder)?;
-        if let Some(light) = parse_light(&isku.read_profile_report(profile, &LIGHT)?) {
-            println!("  Lighting: {}", describe_light(light));
-        }
+
+        // Read each report once, then use it for both the listing and the backup.
+        let mut reports = Vec::new();
         for report in &PROFILE_REPORTS {
             let bytes = isku.read_profile_report(profile, report)?;
-            save(folder, &format!("profile-{}-{}.bin", profile + 1, report.name), &bytes)?;
+            save(
+                folder,
+                &format!("profile-{}-{}.bin", profile + 1, report.name),
+                &bytes,
+            )?;
+            reports.push((report.id, bytes));
+        }
+        let bytes_of = |id: u8| {
+            reports
+                .iter()
+                .find(|(r, _)| *r == id)
+                .map(|(_, b)| b.as_slice())
+                .ok_or("missing report")
+        };
+
+        for (group, only_changed) in [
+            (&THUMB_KEYS, false),
+            (&MACRO_KEYS, false),
+            (&EASYZONE_KEYS, true),
+            (&FUNCTION_KEYS, true),
+            (&MEDIA_KEYS, true),
+        ] {
+            show_group(
+                &isku,
+                profile,
+                group,
+                bytes_of(group.report.id)?,
+                only_changed,
+                folder,
+            )?;
+        }
+        if let Some(light) = parse_light(bytes_of(LIGHT.id)?) {
+            println!("  Lighting: {}", describe_light(light));
         }
     }
 
     for report in [&INFO, &LAST_SET] {
-        save(folder, &format!("{}.bin", report.name), &isku.read_global(report)?)?;
+        save(
+            folder,
+            &format!("{}.bin", report.name),
+            &isku.read_global(report)?,
+        )?;
     }
 
     let active_after = isku.active_profile()?;
@@ -104,14 +146,18 @@ fn show(folder: Option<&Path>) -> Result<(), String> {
     if let Some(folder) = folder {
         println!("Backup saved to {}", folder.display());
     }
+    println!(
+        "Took {:.1} s: {}",
+        started.elapsed().as_secs_f64(),
+        isku.timing()
+    );
     Ok(())
 }
 
 fn has_backup(profile: u8) -> bool {
     let file = format!("profile-{}-{}.bin", profile + 1, THUMB_KEYS.report.name);
-    fs::read_dir("backups").is_ok_and(|mut entries| {
-        entries.any(|e| e.is_ok_and(|e| e.path().join(&file).exists()))
-    })
+    fs::read_dir("backups")
+        .is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().join(&file).exists())))
 }
 
 fn timestamp() -> Result<u64, String> {
@@ -129,7 +175,9 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     )?;
     let reset = value.eq_ignore_ascii_case("default");
     if reset && group.defaults.is_none() {
-        return Err("default only works for zone, F- and media keys, use restore for the others".into());
+        return Err(
+            "default only works for zone, F- and media keys, use restore for the others".into(),
+        );
     }
     let shortcut = if reset {
         None
@@ -139,7 +187,10 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         )?)
     };
     if !has_backup(profile) {
-        return Err(format!("no backup of profile {} found, run: cargo run -- backup", profile + 1));
+        return Err(format!(
+            "no backup of profile {} found, run: cargo run -- backup",
+            profile + 1
+        ));
     }
 
     let isku = Isku::open()?;
@@ -161,7 +212,10 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
             with_shortcut(&current, group, position, modifier, key),
             shortcut_text(modifier, key),
         ),
-        None => (with_default(&current, group, position), "back to normal".to_string()),
+        None => (
+            with_default(&current, group, position),
+            "back to normal".to_string(),
+        ),
     };
     let updated = updated.ok_or("bad key report")?;
     isku.write_profile_report(profile, &group.report, &updated)?;
@@ -170,7 +224,10 @@ fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     } else {
         group.labels[position].to_string()
     };
-    println!("Profile {}: {name} is now {text}. Read back and confirmed.", profile + 1);
+    println!(
+        "Profile {}: {name} is now {text}. Read back and confirmed.",
+        profile + 1
+    );
     println!("Before this change: {}", undo_file.display());
     Ok(())
 }
@@ -197,7 +254,10 @@ fn restore(folder: &str, profile: &str) -> Result<(), String> {
             restored += 1;
         }
     }
-    println!("Profile {} matches the backup. Reports restored: {restored}", profile + 1);
+    println!(
+        "Profile {} matches the backup. Reports restored: {restored}",
+        profile + 1
+    );
     Ok(())
 }
 
@@ -209,7 +269,11 @@ fn reset(number: &str) -> Result<(), String> {
     let folder = new_backup_folder()?;
     for report in &PROFILE_REPORTS {
         let bytes = isku.read_profile_report(profile, report)?;
-        save(Some(&folder), &format!("profile-{}-{}.bin", profile + 1, report.name), &bytes)?;
+        save(
+            Some(&folder),
+            &format!("profile-{}-{}.bin", profile + 1, report.name),
+            &bytes,
+        )?;
     }
     println!("Saved profile {} to {}", profile + 1, folder.display());
 
@@ -238,41 +302,71 @@ fn reset(number: &str) -> Result<(), String> {
         changed += 1;
     }
 
-    println!("Profile {}: {changed} groups reset. Thumb and M keys left as they were.", profile + 1);
-    println!("Undo with: cargo run -- restore {} {}", folder.display(), profile + 1);
+    println!(
+        "Profile {}: {changed} groups reset. Thumb and M keys left as they were.",
+        profile + 1
+    );
+    println!(
+        "Undo with: cargo run -- restore {} {}",
+        folder.display(),
+        profile + 1
+    );
     Ok(())
 }
 
 fn set_light(number: &str, setting: &str, value: Option<&str>) -> Result<(), String> {
     let profile = profile_index(number).ok_or("use a profile number, 1 to 5")?;
     if !has_backup(profile) {
-        return Err(format!("no backup of profile {} found, run: cargo run -- backup", profile + 1));
+        return Err(format!(
+            "no backup of profile {} found, run: cargo run -- backup",
+            profile + 1
+        ));
     }
     let isku = Isku::open()?;
     let current = isku.read_profile_report(profile, &LIGHT)?;
     let light = parse_light(&current).ok_or("bad light report")?;
 
     let number = |text: Option<&str>| -> Result<u8, String> {
-        text.and_then(|t| t.parse().ok()).ok_or_else(|| "use a whole number".to_string())
+        text.and_then(|t| t.parse().ok())
+            .ok_or_else(|| "use a whole number".to_string())
     };
     let wanted = match (setting.to_ascii_lowercase().as_str(), value) {
         ("default", None) => LIGHT_DEFAULT,
-        ("brightness", _) => Light { brightness: number(value)?, ..light },
-        ("dim", _) => Light { dimness: number(value)?, ..light },
-        ("timeout", _) => Light { timeout: number(value)?, ..light },
-        _ => return Err("use: light <1-5> brightness|dim <0-5>, timeout <1-255> or default".into()),
+        ("brightness", _) => Light {
+            brightness: number(value)?,
+            ..light
+        },
+        ("dim", _) => Light {
+            dimness: number(value)?,
+            ..light
+        },
+        ("timeout", _) => Light {
+            timeout: number(value)?,
+            ..light
+        },
+        _ => {
+            return Err("use: light <1-5> brightness|dim <0-5>, timeout <1-255> or default".into())
+        }
     };
     let updated = with_light(&current, wanted)
         .ok_or("brightness and dim go from 0 to 5, timeout from 1 to 255 minutes")?;
     if updated == current {
-        println!("Profile {}: lighting already {}", profile + 1, describe_light(light));
+        println!(
+            "Profile {}: lighting already {}",
+            profile + 1,
+            describe_light(light)
+        );
         return Ok(());
     }
 
     let undo = PathBuf::from("backups").join("changes");
     fs::create_dir_all(&undo).map_err(|e| e.to_string())?;
-    let undo_file =
-        undo.join(format!("{}-profile-{}-{}.bin", timestamp()?, profile + 1, LIGHT.name));
+    let undo_file = undo.join(format!(
+        "{}-profile-{}-{}.bin",
+        timestamp()?,
+        profile + 1,
+        LIGHT.name
+    ));
     fs::write(&undo_file, &current).map_err(|e| e.to_string())?;
 
     isku.write_profile_report(profile, &LIGHT, &updated)?;

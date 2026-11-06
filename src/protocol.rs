@@ -29,8 +29,20 @@ pub struct Report {
     pub has_checksum: bool,
 }
 
-const fn report(id: u8, len: usize, name: &'static str, request: Option<u8>, has_checksum: bool) -> Report {
-    Report { id, len, name, request, has_checksum }
+const fn report(
+    id: u8,
+    len: usize,
+    name: &'static str,
+    request: Option<u8>,
+    has_checksum: bool,
+) -> Report {
+    Report {
+        id,
+        len,
+        name,
+        request,
+        has_checksum,
+    }
 }
 
 pub const ACTUAL_PROFILE: Report = report(0x05, 3, "actual_profile", None, false);
@@ -48,7 +60,13 @@ pub const KEYS_THUMBSTER: Report = report(0x0b, 23, "keys_thumbster", Some(0xd0)
 
 /// Every report that exists once per profile.
 pub const PROFILE_REPORTS: [Report; 8] = [
-    KEY_MASK, KEYS_FUNCTION, LIGHT, KEYS_CAPSLOCK, KEYS_MACRO, KEYS_EASYZONE, KEYS_MEDIA,
+    KEY_MASK,
+    KEYS_FUNCTION,
+    LIGHT,
+    KEYS_CAPSLOCK,
+    KEYS_MACRO,
+    KEYS_EASYZONE,
+    KEYS_MEDIA,
     KEYS_THUMBSTER,
 ];
 
@@ -74,7 +92,9 @@ pub const THUMB_KEYS: KeyGroup = KeyGroup {
 pub const MACRO_KEYS: KeyGroup = KeyGroup {
     title: "Macro keys",
     report: KEYS_MACRO,
-    labels: &["M1", "M2", "M3", "M4", "M5", "Shift+M1", "Shift+M2", "Shift+M3", "Shift+M4", "Shift+M5"],
+    labels: &[
+        "M1", "M2", "M3", "M4", "M5", "Shift+M1", "Shift+M2", "Shift+M3", "Shift+M4", "Shift+M5",
+    ],
     first_macro_index: 0x00,
     defaults: None,
 };
@@ -92,30 +112,38 @@ pub const EASYZONE_KEYS: KeyGroup = KeyGroup {
 
 /// What the Easy-Shift zone holds when a key has not been changed.
 pub const EASYZONE_DEFAULTS: [u8; 20] = [
-    0x1e, 0x1f, 0x20, 0x21, 0x22, 0x14, 0x1a, 0x08, 0x15, 0x17, 0x04, 0x16, 0x07, 0x09, 0x0a,
-    0x1d, 0x1b, 0x06, 0x19, 0x05,
+    0x1e, 0x1f, 0x20, 0x21, 0x22, 0x14, 0x1a, 0x08, 0x15, 0x17, 0x04, 0x16, 0x07, 0x09, 0x0a, 0x1d,
+    0x1b, 0x06, 0x19, 0x05,
 ];
 
 pub const FUNCTION_KEYS: KeyGroup = KeyGroup {
     title: "F-keys",
     report: KEYS_FUNCTION,
-    labels: &["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
+    labels: &[
+        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+    ],
     first_macro_index: 0x24,
-    defaults: Some(&[0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45]),
+    defaults: Some(&[
+        0x3a, 0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45,
+    ]),
 };
 
 /// Names and defaults from roccat-tools, matching profiles 3-5 in our backup.
 pub const MEDIA_KEYS: KeyGroup = KeyGroup {
     title: "Media keys",
     report: KEYS_MEDIA,
-    labels: &["Mute", "VolDown", "VolUp", "Play", "Prev", "Next", "WWW", "Computer"],
+    labels: &[
+        "Mute", "VolDown", "VolUp", "Play", "Prev", "Next", "WWW", "Computer",
+    ],
     first_macro_index: 0x30,
     defaults: Some(&[0xa0, 0xa2, 0xa1, 0xa4, 0xa5, 0xa6, 0xa8, 0xa9]),
 };
 
 /// The 16-bit sum of every byte, which the keyboard stores little-endian.
 pub fn checksum(bytes: &[u8]) -> u16 {
-    bytes.iter().fold(0u16, |sum, b| sum.wrapping_add(u16::from(*b)))
+    bytes
+        .iter()
+        .fold(0u16, |sum, b| sum.wrapping_add(u16::from(*b)))
 }
 
 /// True when the last two bytes are the checksum of everything before them.
@@ -149,7 +177,11 @@ pub fn bindings(report: &[u8], keys: usize) -> Option<Vec<Binding>> {
     let shortcut_keys = report.get(3 + 2 * keys..3 + 3 * keys)?;
     Some(
         (0..keys)
-            .map(|i| Binding { action: actions[i], modifier: modifiers[i], key: shortcut_keys[i] })
+            .map(|i| Binding {
+                action: actions[i],
+                modifier: modifiers[i],
+                key: shortcut_keys[i],
+            })
             .collect(),
     )
 }
@@ -159,15 +191,53 @@ pub fn bindings(report: &[u8], keys: usize) -> Option<Vec<Binding>> {
 /// IDs, which name a key's position on a US layout. On an Estonian layout the
 /// same positions print different symbols, for example Minus is the + key.
 const NAMED_KEYS: &[(u8, &str)] = &[
-    (0x28, "Enter"), (0x29, "Esc"), (0x2a, "Backspace"), (0x2b, "Tab"), (0x2c, "Space"),
-    (0x2d, "Minus"), (0x2e, "Equal"), (0x2f, "LeftBracket"), (0x30, "RightBracket"),
-    (0x31, "Backslash"), (0x33, "Semicolon"), (0x34, "Quote"), (0x35, "Grave"),
-    (0x36, "Comma"), (0x37, "Period"), (0x38, "Slash"), (0x39, "CapsLock"),
-    (0x46, "PrintScreen"), (0x47, "ScrollLock"), (0x48, "Pause"), (0x49, "Insert"),
-    (0x4a, "Home"), (0x4b, "PageUp"), (0x4c, "Delete"), (0x4d, "End"), (0x4e, "PageDown"),
-    (0x4f, "Right"), (0x50, "Left"), (0x51, "Down"), (0x52, "Up"), (0x53, "NumLock"),
-    (0x54, "NumSlash"), (0x55, "NumStar"), (0x56, "NumMinus"), (0x57, "NumPlus"),
-    (0x58, "NumEnter"), (0x63, "NumPeriod"), (0x64, "IsoBackslash"), (0x65, "Menu"),
+    (0x28, "Enter"),
+    (0x29, "Esc"),
+    (0x2a, "Backspace"),
+    (0x2b, "Tab"),
+    (0x2c, "Space"),
+    (0x2d, "Minus"),
+    (0x2e, "Equal"),
+    (0x2f, "LeftBracket"),
+    (0x30, "RightBracket"),
+    (0x31, "Backslash"),
+    (0x33, "Semicolon"),
+    (0x34, "Quote"),
+    (0x35, "Grave"),
+    (0x36, "Comma"),
+    (0x37, "Period"),
+    (0x38, "Slash"),
+    (0x39, "CapsLock"),
+    (0x46, "PrintScreen"),
+    (0x47, "ScrollLock"),
+    (0x48, "Pause"),
+    (0x49, "Insert"),
+    (0x4a, "Home"),
+    (0x4b, "PageUp"),
+    (0x4c, "Delete"),
+    (0x4d, "End"),
+    (0x4e, "PageDown"),
+    (0x4f, "Right"),
+    (0x50, "Left"),
+    (0x51, "Down"),
+    (0x52, "Up"),
+    (0x53, "NumLock"),
+    (0x54, "NumSlash"),
+    (0x55, "NumStar"),
+    (0x56, "NumMinus"),
+    (0x57, "NumPlus"),
+    (0x58, "NumEnter"),
+    (0x63, "NumPeriod"),
+    (0xe0, "LeftCtrl"),
+    (0xe1, "LeftShift"),
+    (0xe2, "LeftAlt"),
+    (0xe3, "LeftWin"),
+    (0xe4, "RightCtrl"),
+    (0xe5, "RightShift"),
+    (0xe6, "RightAlt"),
+    (0xe7, "RightWin"),
+    (0x64, "IsoBackslash"),
+    (0x65, "Menu"),
 ];
 
 /// Names for HID keyboard usage codes.
@@ -180,10 +250,10 @@ pub fn key_name(code: u8) -> String {
         0x59..=0x61 => format!("Num{}", code - 0x58),
         0x62 => "Num0".to_string(),
         0x68..=0x73 => format!("F{}", code - 0x68 + 13),
-        _ => NAMED_KEYS
-            .iter()
-            .find(|(c, _)| *c == code)
-            .map_or_else(|| format!("key 0x{code:02x}"), |(_, name)| (*name).to_string()),
+        _ => NAMED_KEYS.iter().find(|(c, _)| *c == code).map_or_else(
+            || format!("key 0x{code:02x}"),
+            |(_, name)| (*name).to_string(),
+        ),
     }
 }
 
@@ -226,7 +296,9 @@ pub fn parse_shortcut(text: &str) -> Option<(u8, u8)> {
     let key = key_code(parts.pop()?)?;
     let mut modifier = 0u8;
     for part in parts {
-        let (bit, _) = MODIFIERS.iter().find(|(_, name)| name.eq_ignore_ascii_case(part))?;
+        let (bit, _) = MODIFIERS
+            .iter()
+            .find(|(_, name)| name.eq_ignore_ascii_case(part))?;
         if modifier & (1 << bit) != 0 {
             return None;
         }
@@ -275,6 +347,25 @@ fn action_name(action: u8) -> Option<&'static str> {
         0xd3..=0xd7 => "standard Shift+number",
         0xd8..=0xdc => "standard Ctrl+number",
         0xdd => "open driver",
+        0xc0 => "open email",
+        0xc1 => "open calculator",
+        0xc2 => "open computer",
+        0xc3 => "open browser",
+        0xc4 => "web search",
+        0xc5 => "web home",
+        0xc6 => "web back",
+        0xc7 => "web forward",
+        0xc8 => "web stop",
+        0xc9 => "web refresh",
+        0xca => "web favorites",
+        0xcb => "open media player",
+        0xcc => "play/pause",
+        0xcd => "next track",
+        0xce => "previous track",
+        0xcf => "stop",
+        0xd0 => "volume up",
+        0xd1 => "volume down",
+        0xd2 => "mute",
         0xdf => "unused",
         0xef => "standard",
         0xfc..=0xfe => "T key",
@@ -289,7 +380,8 @@ pub fn describe(binding: Binding) -> String {
     }
     match action_name(binding.action) {
         Some(name) => format!("{name} (0x{:02x})", binding.action),
-        None => format!("key {}", key_name(binding.action)),
+        None if binding.action < 0x80 => format!("key {}", key_name(binding.action)),
+        None => format!("unknown action (0x{:02x})", binding.action),
     }
 }
 
@@ -355,7 +447,11 @@ pub fn describe_macro(value: &Macro) -> String {
         })
         .collect();
     let more = value.keystrokes.len().saturating_sub(steps.len());
-    let suffix = if more > 0 { format!(", and {more} more") } else { String::new() };
+    let suffix = if more > 0 {
+        format!(", and {more} more")
+    } else {
+        String::new()
+    };
     format!("\"{}\": {}{suffix}", value.name, steps.join(", "))
 }
 
@@ -388,21 +484,43 @@ pub fn with_shortcut(
     modifier: u8,
     key: u8,
 ) -> Option<Vec<u8>> {
-    with_binding(report, group, position, Binding { action: ACTION_SHORTCUT, modifier, key })
+    with_binding(
+        report,
+        group,
+        position,
+        Binding {
+            action: ACTION_SHORTCUT,
+            modifier,
+            key,
+        },
+    )
 }
 
 /// Returns a copy of a key report with one key put back to what it does when
 /// unchanged, for groups that have defaults.
 pub fn with_default(report: &[u8], group: &KeyGroup, position: usize) -> Option<Vec<u8>> {
     let action = *group.defaults?.get(position)?;
-    with_binding(report, group, position, Binding { action, modifier: 0, key: 0 })
+    with_binding(
+        report,
+        group,
+        position,
+        Binding {
+            action,
+            modifier: 0,
+            key: 0,
+        },
+    )
 }
 
 /// Finds a settable key by name: `T1`, `Shift+T1`, `M1`, `Shift+M1`, `F1`,
 /// `Mute`, or an Easy-Shift zone key such as `Shift+Q`.
 pub fn find_key(label: &str) -> Option<(&'static KeyGroup, usize)> {
     for group in [&THUMB_KEYS, &MACRO_KEYS, &FUNCTION_KEYS, &MEDIA_KEYS] {
-        if let Some(i) = group.labels.iter().position(|l| l.eq_ignore_ascii_case(label)) {
+        if let Some(i) = group
+            .labels
+            .iter()
+            .position(|l| l.eq_ignore_ascii_case(label))
+        {
             return Some((group, i));
         }
     }
@@ -410,7 +528,10 @@ pub fn find_key(label: &str) -> Option<(&'static KeyGroup, usize)> {
     if !prefix.eq_ignore_ascii_case("Shift+") {
         return None;
     }
-    let i = EASYZONE_KEYS.labels.iter().position(|l| l.eq_ignore_ascii_case(key))?;
+    let i = EASYZONE_KEYS
+        .labels
+        .iter()
+        .position(|l| l.eq_ignore_ascii_case(key))?;
     Some((&EASYZONE_KEYS, i))
 }
 
@@ -453,7 +574,11 @@ pub struct Light {
 pub const LIGHT_MAX: u8 = 5;
 
 /// Factory lighting from roccat-tools' default profile.
-pub const LIGHT_DEFAULT: Light = Light { brightness: 3, dimness: 1, timeout: 15 };
+pub const LIGHT_DEFAULT: Light = Light {
+    brightness: 3,
+    dimness: 1,
+    timeout: 15,
+};
 
 impl Light {
     pub fn is_valid(&self) -> bool {
@@ -465,7 +590,11 @@ pub fn parse_light(report: &[u8]) -> Option<Light> {
     if report.len() != LIGHT.len || report[0] != LIGHT.id || !checksum_ok(report) {
         return None;
     }
-    Some(Light { brightness: report[5], dimness: report[6], timeout: report[7] })
+    Some(Light {
+        brightness: report[5],
+        dimness: report[6],
+        timeout: report[7],
+    })
 }
 
 /// Returns a copy of a light report with new values and checksum. Bytes 3 and 4
@@ -491,7 +620,12 @@ pub fn describe_light(light: Light) -> String {
     )
 }
 
-fn with_binding(report: &[u8], group: &KeyGroup, position: usize, binding: Binding) -> Option<Vec<u8>> {
+fn with_binding(
+    report: &[u8],
+    group: &KeyGroup,
+    position: usize,
+    binding: Binding,
+) -> Option<Vec<u8>> {
     let keys = group.labels.len();
     if position >= keys || report.len() != group.report.len {
         return None;
@@ -567,7 +701,13 @@ mod tests {
 
     #[test]
     fn key_report_sizes_fit_their_key_counts() {
-        for group in [THUMB_KEYS, MACRO_KEYS, EASYZONE_KEYS, FUNCTION_KEYS, MEDIA_KEYS] {
+        for group in [
+            THUMB_KEYS,
+            MACRO_KEYS,
+            EASYZONE_KEYS,
+            FUNCTION_KEYS,
+            MEDIA_KEYS,
+        ] {
             assert_eq!(group.report.len, 5 + 3 * group.labels.len());
             if let Some(defaults) = group.defaults {
                 assert_eq!(defaults.len(), group.labels.len());
@@ -595,14 +735,32 @@ mod tests {
         report[9] = 0x02;
         report[15] = 0x1e;
         let keys = bindings(&report, 6).unwrap();
-        assert_eq!(keys[0], Binding { action: 0xb8, modifier: 0x02, key: 0x1e });
-        assert_eq!(keys[5], Binding { action: 0xb9, modifier: 0, key: 0 });
+        assert_eq!(
+            keys[0],
+            Binding {
+                action: 0xb8,
+                modifier: 0x02,
+                key: 0x1e
+            }
+        );
+        assert_eq!(
+            keys[5],
+            Binding {
+                action: 0xb9,
+                modifier: 0,
+                key: 0
+            }
+        );
         assert_eq!(bindings(&CAPSLOCK, 6), None);
     }
 
     #[test]
     fn describe_names_actions() {
-        let bind = |action, modifier, key| Binding { action, modifier, key };
+        let bind = |action, modifier, key| Binding {
+            action,
+            modifier,
+            key,
+        };
         assert_eq!(describe(bind(0xbe, 0, 0)), "macro (0xbe)");
         assert_eq!(describe(bind(0x1e, 0, 0)), "key 1");
         assert_eq!(describe(bind(0x27, 0, 0)), "key 0");
@@ -637,7 +795,14 @@ mod tests {
         let updated = with_shortcut(&THUMBSTER, &THUMB_KEYS, 0, 0, 0x24).unwrap();
         assert!(checksum_ok(&updated));
         let keys = bindings(&updated, 6).unwrap();
-        assert_eq!(keys[0], Binding { action: ACTION_SHORTCUT, modifier: 0, key: 0x24 });
+        assert_eq!(
+            keys[0],
+            Binding {
+                action: ACTION_SHORTCUT,
+                modifier: 0,
+                key: 0x24
+            }
+        );
         assert_eq!(keys[1], bindings(&THUMBSTER, 6).unwrap()[1]);
         assert_eq!(describe(keys[0]), "shortcut 7");
     }
@@ -670,21 +835,35 @@ mod tests {
 
     #[test]
     fn parse_shortcut_refuses_anything_unclear() {
-        for text in ["", "Ctrl+", "Ctrl+Ctrl+1", "Ctrl", "Foo", "F25", "F0", "Hyper+1", "1+Ctrl", "Num10"] {
+        for text in [
+            "",
+            "Ctrl+",
+            "Ctrl+Ctrl+1",
+            "Ctrl",
+            "Foo",
+            "F25",
+            "F0",
+            "Hyper+1",
+            "1+Ctrl",
+            "Num10",
+        ] {
             assert_eq!(parse_shortcut(text), None, "{text}");
         }
     }
 
     #[test]
     fn every_named_key_reads_back_as_itself() {
-        for code in (0x04..=0x65).chain(0x68..=0x73) {
+        for code in (0x04..=0x65).chain(0x68..=0x73).chain(0xe0..=0xe7) {
             let name = key_name(code);
             if !name.starts_with("key ") {
                 assert_eq!(key_code(&name), Some(code), "{name}");
             }
         }
         assert_eq!(shortcut_text(0b1100, 0x1d), "Ctrl+Alt+Z");
-        assert_eq!(parse_shortcut(&shortcut_text(0b11110, 0x3e)), Some((0b11110, 0x3e)));
+        assert_eq!(
+            parse_shortcut(&shortcut_text(0b11110, 0x3e)),
+            Some((0b11110, 0x3e))
+        );
     }
 
     #[test]
@@ -711,8 +890,14 @@ mod tests {
     fn easyzone_default_undoes_a_shortcut() {
         let changed = with_shortcut(&easyzone(), &EASYZONE_KEYS, 5, 0b0100, 0x1e).unwrap();
         assert!(checksum_ok(&changed));
-        assert_eq!(describe(bindings(&changed, 20).unwrap()[5]), "shortcut Ctrl+1");
-        assert_eq!(with_default(&changed, &EASYZONE_KEYS, 5).unwrap(), easyzone());
+        assert_eq!(
+            describe(bindings(&changed, 20).unwrap()[5]),
+            "shortcut Ctrl+1"
+        );
+        assert_eq!(
+            with_default(&changed, &EASYZONE_KEYS, 5).unwrap(),
+            easyzone()
+        );
         assert_eq!(with_default(&changed, &EASYZONE_KEYS, 20), None);
     }
 
@@ -761,7 +946,10 @@ mod tests {
     fn all_defaults_resets_every_key_in_a_group() {
         let mut changed = with_shortcut(&easyzone(), &EASYZONE_KEYS, 0, 0b0100, 0x1e).unwrap();
         changed = with_shortcut(&changed, &EASYZONE_KEYS, 19, 0, 0x3e).unwrap();
-        assert_eq!(with_all_defaults(&changed, &EASYZONE_KEYS).unwrap(), easyzone());
+        assert_eq!(
+            with_all_defaults(&changed, &EASYZONE_KEYS).unwrap(),
+            easyzone()
+        );
         assert_eq!(with_all_defaults(&THUMBSTER, &THUMB_KEYS), None);
     }
 
@@ -773,7 +961,10 @@ mod tests {
         from_8c[2] = 0x04;
         let sum = checksum(&from_8c[..4]);
         from_8c[4..].copy_from_slice(&sum.to_le_bytes());
-        assert_eq!(with_capslock(&from_8c, CAPSLOCK_DEFAULT).unwrap(), profile_5);
+        assert_eq!(
+            with_capslock(&from_8c, CAPSLOCK_DEFAULT).unwrap(),
+            profile_5
+        );
         assert!(valid_profile_report(&KEYS_CAPSLOCK, 4, &profile_5));
         assert_eq!(with_capslock(&THUMBSTER, CAPSLOCK_DEFAULT), None);
     }
@@ -784,30 +975,93 @@ mod tests {
     #[test]
     fn parse_light_reads_the_real_report() {
         let light = parse_light(&LIGHT_REPORT).unwrap();
-        assert_eq!(light, Light { brightness: 5, dimness: 1, timeout: 15 });
-        assert_eq!(describe_light(light), "brightness 5 of 5, dims to 1 after 15 min");
+        assert_eq!(
+            light,
+            Light {
+                brightness: 5,
+                dimness: 1,
+                timeout: 15
+            }
+        );
+        assert_eq!(
+            describe_light(light),
+            "brightness 5 of 5, dims to 1 after 15 min"
+        );
         assert!(valid_profile_report(&LIGHT, 0, &LIGHT_REPORT));
     }
 
     #[test]
     fn with_light_changes_values_and_keeps_the_report_valid() {
-        let updated = with_light(&LIGHT_REPORT, Light { brightness: 2, ..LIGHT_DEFAULT }).unwrap();
+        let updated = with_light(
+            &LIGHT_REPORT,
+            Light {
+                brightness: 2,
+                ..LIGHT_DEFAULT
+            },
+        )
+        .unwrap();
         assert!(valid_profile_report(&LIGHT, 0, &updated));
         assert_eq!(parse_light(&updated).unwrap().brightness, 2);
         assert_eq!(updated[3..5], LIGHT_REPORT[3..5]);
-        let back = with_light(&updated, Light { brightness: 5, dimness: 1, timeout: 15 }).unwrap();
+        let back = with_light(
+            &updated,
+            Light {
+                brightness: 5,
+                dimness: 1,
+                timeout: 15,
+            },
+        )
+        .unwrap();
         assert_eq!(back, LIGHT_REPORT);
     }
 
     #[test]
     fn with_light_refuses_out_of_range_values() {
         for light in [
-            Light { brightness: 6, ..LIGHT_DEFAULT },
-            Light { dimness: 6, ..LIGHT_DEFAULT },
-            Light { timeout: 0, ..LIGHT_DEFAULT },
+            Light {
+                brightness: 6,
+                ..LIGHT_DEFAULT
+            },
+            Light {
+                dimness: 6,
+                ..LIGHT_DEFAULT
+            },
+            Light {
+                timeout: 0,
+                ..LIGHT_DEFAULT
+            },
         ] {
             assert_eq!(with_light(&LIGHT_REPORT, light), None);
         }
         assert_eq!(with_light(&CAPSLOCK, LIGHT_DEFAULT), None);
+    }
+
+    #[test]
+    fn names_cover_modifier_keys_and_app_actions() {
+        assert_eq!(key_name(0xe0), "LeftCtrl");
+        assert_eq!(key_name(0xe7), "RightWin");
+        let bind = |action| Binding {
+            action,
+            modifier: 0,
+            key: 0,
+        };
+        assert_eq!(describe(bind(0xc3)), "open browser (0xc3)");
+        assert_eq!(describe(bind(0xe9)), "unknown action (0xe9)");
+        let ctrl_q = Macro {
+            macroset: String::new(),
+            name: "Ctrl q".to_string(),
+            keystrokes: [(0xe0, 1), (0x14, 1), (0x14, 2), (0xe0, 2)]
+                .iter()
+                .map(|&(key, action)| Keystroke {
+                    key,
+                    action,
+                    period_ms: 0,
+                })
+                .collect(),
+        };
+        assert_eq!(
+            describe_macro(&ctrl_q),
+            "\"Ctrl q\": press LeftCtrl, press Q, release Q, release LeftCtrl"
+        );
     }
 }
