@@ -83,7 +83,13 @@ impl Isku {
             .map_err(|e| format!("reading report 0x{id:02x}: {e}"));
         self.stats.reads.set(self.stats.reads.get() + 1);
         add(&self.stats.read_time, start);
-        result?;
+        // hidapi counts the report id byte too, so a full report gives >= len.
+        let got = result?;
+        if got < len {
+            return Err(format!(
+                "report 0x{id:02x}: keyboard sent {got} bytes, expected {len}"
+            ));
+        }
         buffer.truncate(len);
         Ok(buffer)
     }

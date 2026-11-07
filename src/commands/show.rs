@@ -1,6 +1,6 @@
 //! `cargo run` and `cargo run -- backup`: list all profiles, optionally saving them.
 
-use super::save;
+use super::{backup_file_name, save};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe, describe_light, describe_macro, parse_light, parse_macro, KeyGroup,
@@ -64,11 +64,7 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
         let mut reports = Vec::new();
         for report in &PROFILE_REPORTS {
             let bytes = isku.read_profile_report(profile, report)?;
-            save(
-                folder,
-                &format!("profile-{}-{}.bin", profile + 1, report.name),
-                &bytes,
-            )?;
+            save(folder, &backup_file_name(profile, report), &bytes)?;
             reports.push((report.id, bytes));
         }
         let bytes_of = |id: u8| {

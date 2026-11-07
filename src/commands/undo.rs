@@ -1,12 +1,12 @@
-//! `undo`: put back the last change made by `set` or `light`.
+//! `undo`: put back the last report written by `set`, `light`, `reset` or
+//! `restore`, one report per run.
 
 use isku_tool::device::Isku;
 use isku_tool::protocol::{parse_change_name, valid_profile_report};
 use std::fs;
 use std::path::PathBuf;
 
-/// Puts back the most recent change made by `set` or `light` that has not been
-/// undone yet. The used change file is renamed to `.undone`.
+/// Puts back the most recent change that has not been undone yet. The used change file is renamed to `.undone`.
 pub fn undo() -> Result<(), String> {
     let folder = PathBuf::from("backups").join("changes");
     let newest = fs::read_dir(&folder)

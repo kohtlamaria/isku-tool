@@ -34,8 +34,6 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     let isku = Isku::open()?;
     let current = isku.read_profile_report(profile, &group.report)?;
 
-    let undo_file = save_change(profile, &group.report, &current)?;
-
     let (updated, text) = match (shortcut, action) {
         (Some((modifier, key)), _) => (
             with_shortcut(&current, group, position, modifier, key),
@@ -51,12 +49,18 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         ),
     };
     let updated = updated.ok_or("bad key report")?;
-    isku.write_profile_report(profile, &group.report, &updated)?;
     let name = if group.report.id == EASYZONE_KEYS.report.id {
         format!("Shift+{}", group.labels[position])
     } else {
         group.labels[position].to_string()
     };
+    if updated == current {
+        println!("Profile {}: {name} is already {text}.", profile + 1);
+        return Ok(());
+    }
+
+    let undo_file = save_change(profile, &group.report, &current)?;
+    isku.write_profile_report(profile, &group.report, &updated)?;
     println!(
         "Profile {}: {name} is now {text}. Read back and confirmed.",
         profile + 1

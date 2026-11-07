@@ -17,7 +17,8 @@ keys and the Easy-Shift zone.
   `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area.
 - `device.rs` talks to the keyboard. Every write is checked and read back.
 - `commands/` has one file per command, and `main.rs` only reads the arguments.
-- `set` and `light` keep the bytes from before each change in `backups/changes/`.
+- `set`, `light`, `reset` and `restore` keep the bytes from before each change
+  in `backups/changes/`, so `undo` can step back one report at a time.
 
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
@@ -33,7 +34,7 @@ keys and the Easy-Shift zone.
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
     cargo run -- light 2 default      # factory lighting: 3, dims to 1 after 15 min
-    cargo run -- undo                 # put back the last set or light change, run again to go further back
+    cargo run -- undo                 # put back the last changed report, run again to go further back
     cargo run -- activate <1-5>       # switch the active profile
 
 Report formats come from the Linux driver and roccat-tools, both GPL. Check the

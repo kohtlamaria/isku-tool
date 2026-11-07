@@ -12,8 +12,13 @@ pub fn set_light(number: &str, setting: &str, value: Option<&str>) -> Result<(),
     let light = parse_light(&current).ok_or("bad light report")?;
 
     let number = |text: Option<&str>| -> Result<u8, String> {
-        text.and_then(|t| t.parse().ok())
-            .ok_or_else(|| "use a whole number".to_string())
+        let text = text.ok_or("use a whole number")?;
+        if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+            return Err("use a whole number".into());
+        }
+        text.parse().map_err(|_| {
+            "brightness and dim go from 0 to 5, timeout from 1 to 255 minutes".to_string()
+        })
     };
     let wanted = match (setting.to_ascii_lowercase().as_str(), value) {
         ("default", None) => LIGHT_DEFAULT,
