@@ -366,6 +366,38 @@ pub fn with_all_defaults(report: &[u8], group: &KeyGroup) -> Option<Vec<u8>> {
 /// Caps Lock as Easy-Shift, which is the factory setting in roccat-tools.
 pub const CAPSLOCK_DEFAULT: u8 = 0xff;
 
+/// What `set <profile> CapsLock ...` accepts. The Caps Lock report has one
+/// action byte and no room for a shortcut.
+pub const CAPSLOCK_ACTIONS: &[(&str, u8)] = &[
+    ("easyshift", 0xff),
+    ("capslock", 0x39),
+    ("off", 0x00),
+    ("default", CAPSLOCK_DEFAULT),
+];
+
+pub fn capslock_action(name: &str) -> Option<u8> {
+    CAPSLOCK_ACTIONS
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(_, code)| *code)
+}
+
+pub fn describe_capslock(action: u8) -> String {
+    match action {
+        0x39 => "normal Caps Lock (0x39)".to_string(),
+        _ => describe(Binding {
+            action,
+            modifier: 0,
+            key: 0,
+        }),
+    }
+}
+
+/// The Caps Lock action byte of a valid Caps Lock report.
+pub fn capslock_of(report: &[u8]) -> Option<u8> {
+    (report.len() == KEYS_CAPSLOCK.len && report[0] == KEYS_CAPSLOCK.id).then(|| report[3])
+}
+
 /// Returns a copy of a Caps Lock report with a new action and checksum.
 pub fn with_capslock(report: &[u8], action: u8) -> Option<Vec<u8>> {
     if report.len() != KEYS_CAPSLOCK.len || report[0] != KEYS_CAPSLOCK.id {
@@ -618,5 +650,19 @@ mod tests {
         );
         assert!(valid_profile_report(&KEYS_CAPSLOCK, 4, &profile_5));
         assert_eq!(with_capslock(&THUMBSTER, CAPSLOCK_DEFAULT), None);
+    }
+
+    #[test]
+    fn capslock_actions_by_name() {
+        assert_eq!(capslock_action("EasyShift"), Some(0xff));
+        assert_eq!(capslock_action("capslock"), Some(0x39));
+        assert_eq!(capslock_action("off"), Some(0x00));
+        assert_eq!(capslock_action("default"), Some(CAPSLOCK_DEFAULT));
+        assert_eq!(capslock_action("Ctrl+F5"), None);
+        assert_eq!(capslock_of(&CAPSLOCK), Some(0x8c));
+        assert_eq!(capslock_of(&THUMBSTER), None);
+        let off = with_capslock(&CAPSLOCK, 0x00).unwrap();
+        assert_eq!(capslock_of(&off), Some(0x00));
+        assert!(valid_profile_report(&KEYS_CAPSLOCK, 0, &off));
     }
 }

@@ -3,7 +3,7 @@
 use super::{backup_file_name, new_backup_folder, profile_arg, save, save_change};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    describe_light, Report, valid_profile_report, with_all_defaults, with_capslock, with_light,
+    bindings, describe_light, for_profile, Report, ACTION_MACRO, MACRO_KEYS, THUMB_KEYS, valid_profile_report, with_all_defaults, with_capslock, with_light,
     CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, KEYS_CAPSLOCK, LIGHT, LIGHT_DEFAULT,
     MEDIA_KEYS, PROFILE_REPORTS,
 };
@@ -95,6 +95,75 @@ pub fn reset(number: &str) -> Result<(), String> {
         "Undo with: cargo run -- restore {} {}",
         folder.display(),
         profile + 1
+    );
+    Ok(())
+}
+
+/// Copies every key and lighting setting from one profile to another. Macros
+/// are separate reports that the tool cannot write yet, so keys that play a
+/// macro are listed with a warning.
+pub fn copy(from: &str, to: &str) -> Result<(), String> {
+    let from = profile_arg(from)?;
+    let to = profile_arg(to)?;
+    if from == to {
+        return Err("copy needs two different profiles".into());
+    }
+    let isku = Isku::open()?;
+
+    // Save the target first, so `restore` can undo the whole copy.
+    let folder = new_backup_folder()?;
+    let mut target = Vec::new();
+    for report in &PROFILE_REPORTS {
+        let bytes = isku.read_profile_report(to, report)?;
+        save(Some(&folder), &backup_file_name(to, report), &bytes)?;
+        target.push(bytes);
+    }
+    println!("Saved profile {} to {}", to + 1, folder.display());
+
+    let mut changed = 0;
+    let mut macro_keys = Vec::new();
+    for (report, current) in PROFILE_REPORTS.iter().zip(&target) {
+        let source = isku.read_profile_report(from, report)?;
+        let updated = for_profile(report, from, &source, to)
+            .ok_or_else(|| format!("profile {} has a bad {} report", from + 1, report.name))?;
+        for group in [&THUMB_KEYS, &MACRO_KEYS, &EASYZONE_KEYS] {
+            if group.report.id == report.id {
+                let keys = bindings(&source, group.labels.len()).ok_or("bad key report")?;
+                for (label, binding) in group.labels.iter().zip(keys) {
+                    if binding.action == ACTION_MACRO {
+                        let shift = if group.report.id == EASYZONE_KEYS.report.id {
+                            "Shift+"
+                        } else {
+                            ""
+                        };
+                        macro_keys.push(format!("{shift}{label}"));
+                    }
+                }
+            }
+        }
+        if updated != *current {
+            write_with_undo(&isku, to, report, current, &updated)?;
+            println!("Copied {}", report.name);
+            changed += 1;
+        }
+    }
+
+    println!(
+        "Profile {} now matches profile {}: {changed} reports written.",
+        to + 1,
+        from + 1
+    );
+    if !macro_keys.is_empty() {
+        println!(
+            "Macros are not copied yet. These keys play profile {}'s own macro in that slot: {}",
+            to + 1,
+            macro_keys.join(", ")
+        );
+    }
+    println!(
+        "Undo with: cargo run -- restore {} {}",
+        folder.display(),
+        to + 1
     );
     Ok(())
 }

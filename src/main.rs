@@ -10,7 +10,9 @@
 //! cargo run -- reset 2             put profile 2's keys and lighting back to factory settings
 //! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
 //! cargo run -- light 2 default      factory lighting
-//! cargo run -- undo                 put back the last set or light change
+//! cargo run -- set 2 CapsLock off   Caps Lock: easyshift, capslock, off or default
+//! cargo run -- copy 5 2             copy profile 5's keys and lighting to profile 2
+//! cargo run -- undo                 put back the last changed report
 //! cargo run -- activate <1-5>       switch the active profile
 
 mod commands;
@@ -26,12 +28,13 @@ fn main() -> Result<(), String> {
         ["set", profile, label, value] => set::set_key(profile, label, value),
         ["restore", folder, profile] => profiles::restore(folder, profile),
         ["activate", number] => profiles::activate(number),
+        ["copy", from, to] => profiles::copy(from, to),
         ["reset", number] => profiles::reset(number),
         ["undo"] => undo::undo(),
         ["light", number, setting] => light::set_light(number, setting, None),
         ["light", number, setting, value] => light::set_light(number, setting, Some(value)),
         _ => Err(
-            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, undo, light <1-5> ... or activate <1-5>".to_string(),
+            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, undo, light <1-5> ..., copy <from> <to> or activate <1-5>".to_string(),
         ),
     }
 }

@@ -121,6 +121,16 @@ Tested on Profile 5 (F11, F12, T3):
 - d0 (volume up) was accepted but did nothing on F12. The c0-d2 range seems to
   have relied on Roccat's software.
 
+Confirmed on Profile 5: Caps Lock (keys_capslock) written as 39, the plain HID
+code for Caps Lock, works as a normal Caps Lock and turns its light on. So
+unlike the thumb keys, the Caps Lock report takes a plain key code. Written as
+`off` (00), pressing Caps Lock did nothing.
+
+Confirmed: asking for a macro slot that holds no macro (for example after
+copying a key that plays a macro to another profile) makes the keyboard answer
+status 4 instead of 1. Seen on Profile 5, M1 and M2 (indexes 00 and 01).
+Pressing M1 then did nothing.
+
 ## Next questions
 
 1. M2-M5 and Easy-Shift M writes are untested (M1 works). They use the same

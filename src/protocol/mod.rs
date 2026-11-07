@@ -147,6 +147,20 @@ pub fn valid_profile_report(report: &Report, profile: u8, bytes: &[u8]) -> bool 
         && checksum_ok(bytes)
 }
 
+/// Returns a copy of a valid profile report moved to another profile: the
+/// profile byte is changed and the checksum recomputed.
+pub fn for_profile(report: &Report, from: u8, bytes: &[u8], to: u8) -> Option<Vec<u8>> {
+    if !report.has_checksum || to >= PROFILE_COUNT || !valid_profile_report(report, from, bytes) {
+        return None;
+    }
+    let mut moved = bytes.to_vec();
+    moved[2] = to;
+    let body = moved.len() - 2;
+    let sum = checksum(&moved[..body]);
+    moved[body..].copy_from_slice(&sum.to_le_bytes());
+    Some(moved)
+}
+
 /// Reads a change file name like `1793997539-profile-5-keys_easyzone.bin`
 /// into its time, profile (counted from 0) and report.
 pub fn parse_change_name(name: &str) -> Option<(u64, u8, Report)> {
@@ -223,6 +237,19 @@ mod tests {
         assert_eq!(profile_index("0"), None);
         assert_eq!(profile_index("6"), None);
         assert_eq!(profile_index("x"), None);
+    }
+
+    #[test]
+    fn for_profile_moves_a_report_and_keeps_it_valid() {
+        let moved = for_profile(&KEYS_THUMBSTER, 0, &THUMBSTER, 4).unwrap();
+        assert!(valid_profile_report(&KEYS_THUMBSTER, 4, &moved));
+        assert_eq!(moved[3..moved.len() - 2], THUMBSTER[3..THUMBSTER.len() - 2]);
+        let back = for_profile(&KEYS_THUMBSTER, 4, &moved, 0).unwrap();
+        assert_eq!(back, THUMBSTER);
+        // Wrong source profile, wrong report, target out of range.
+        assert_eq!(for_profile(&KEYS_THUMBSTER, 1, &THUMBSTER, 4), None);
+        assert_eq!(for_profile(&KEYS_CAPSLOCK, 0, &THUMBSTER, 4), None);
+        assert_eq!(for_profile(&KEYS_THUMBSTER, 0, &THUMBSTER, 5), None);
     }
 
     #[test]

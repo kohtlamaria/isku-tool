@@ -17,8 +17,9 @@ keys and the Easy-Shift zone.
   `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area.
 - `device.rs` talks to the keyboard. Every write is checked and read back.
 - `commands/` has one file per command, and `main.rs` only reads the arguments.
-- `set`, `light`, `reset` and `restore` keep the bytes from before each change
-  in `backups/changes/`, so `undo` can step back one report at a time.
+- `set`, `light`, `reset`, `restore` and `copy` keep the bytes from before
+  each change in `backups/changes/`, so `undo` can step back one report at a
+  time.
 
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
@@ -30,6 +31,8 @@ keys and the Easy-Shift zone.
                                       # Play, Prev, Next, WWW, Computer
     cargo run -- set 2 Shift+Q default  # put a zone, F- or media key back to normal
     cargo run -- set 2 T3 profile-cycle # special actions, see below
+    cargo run -- set 2 CapsLock off   # Caps Lock: easyshift, capslock, off or default
+    cargo run -- copy 5 2             # copy profile 5's keys and lighting to profile 2
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
@@ -47,6 +50,10 @@ numbers and F-keys are the same.
 Special actions for `set`: `off`, `profile-up`, `profile-down`,
 `profile-cycle`, `profile-1` to `profile-5`, `easyshift`. Media actions only
 work on the media key row, so they are not offered for other keys.
+
+`copy` copies keys, Caps Lock and lighting, but not macros yet: those are
+separate reports the tool cannot write. A copied key that plays a macro plays
+the target profile's macro in that slot, and `copy` lists those keys.
 
 ## Licence
 

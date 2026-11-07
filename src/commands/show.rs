@@ -3,9 +3,9 @@
 use super::{backup_file_name, save};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe, describe_light, describe_macro, parse_light, parse_macro, KeyGroup,
+    bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro, parse_light, parse_macro, KeyGroup,
     ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, LAST_SET, LIGHT, MACRO_KEYS, MEDIA_KEYS,
-    PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    KEYS_CAPSLOCK, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -25,14 +25,20 @@ fn show_group(
         let key_index = group.first_macro_index + i as u8;
         let mut detail = describe(*binding);
         if binding.action == ACTION_MACRO {
-            let bytes = isku.read_macro(profile, key_index)?;
-            save(
-                folder,
-                &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1),
-                &bytes,
-            )?;
-            if let Some(value) = parse_macro(&bytes) {
-                detail = format!("macro {}", describe_macro(&value));
+            // A key can point at a macro slot that holds nothing, for example
+            // after `copy`. The keyboard then answers with an error status.
+            match isku.read_macro(profile, key_index) {
+                Ok(bytes) => {
+                    save(
+                        folder,
+                        &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1),
+                        &bytes,
+                    )?;
+                    if let Some(value) = parse_macro(&bytes) {
+                        detail = format!("macro {}", describe_macro(&value));
+                    }
+                }
+                Err(e) => detail = format!("macro, but none is saved in this slot ({e})"),
             }
         }
         let unchanged = group.defaults.is_some_and(|d| binding.action == d[i]);
@@ -90,6 +96,9 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
                 only_changed,
                 folder,
             )?;
+        }
+        if let Some(action) = capslock_of(bytes_of(KEYS_CAPSLOCK.id)?) {
+            println!("  Caps Lock: {}", describe_capslock(action));
         }
         if let Some(light) = parse_light(bytes_of(LIGHT.id)?) {
             println!("  Lighting: {}", describe_light(light));

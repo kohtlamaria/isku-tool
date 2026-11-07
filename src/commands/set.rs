@@ -3,15 +3,18 @@
 use super::{profile_arg, require_backup, save_change};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    action_code, find_key, parse_shortcut, shortcut_text, with_action, with_default, with_shortcut,
-    EASYZONE_KEYS,
+    action_code, capslock_action, describe_capslock, find_key, parse_shortcut, shortcut_text,
+    with_action, with_capslock, with_default, with_shortcut, EASYZONE_KEYS, KEYS_CAPSLOCK,
 };
 
 pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     let profile = profile_arg(profile)?;
+    if label.eq_ignore_ascii_case("CapsLock") {
+        return set_capslock(profile, value);
+    }
     let (group, position) = find_key(label).ok_or(
         "use T1-T3, M1-M5, F1-F12, Mute, VolDown, VolUp, Play, Prev, Next, WWW, Computer, \
-         or with Easy-Shift: Shift+T1, Shift+M1, Shift+Q and the rest of the zone",
+         CapsLock, or with Easy-Shift: Shift+T1, Shift+M1, Shift+Q and the rest of the zone",
     )?;
     let reset = value.eq_ignore_ascii_case("default");
     if reset && group.defaults.is_none() {
@@ -63,6 +66,31 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
     isku.write_profile_report(profile, &group.report, &updated)?;
     println!(
         "Profile {}: {name} is now {text}. Read back and confirmed.",
+        profile + 1
+    );
+    println!("Before this change: {}", undo_file.display());
+    Ok(())
+}
+
+/// Caps Lock has its own one-byte report, so it only takes a few actions.
+fn set_capslock(profile: u8, value: &str) -> Result<(), String> {
+    let action =
+        capslock_action(value).ok_or("for CapsLock use easyshift, capslock, off or default")?;
+    require_backup(profile)?;
+
+    let isku = Isku::open()?;
+    let current = isku.read_profile_report(profile, &KEYS_CAPSLOCK)?;
+    let updated = with_capslock(&current, action).ok_or("bad Caps Lock report")?;
+    let text = describe_capslock(action);
+    if updated == current {
+        println!("Profile {}: Caps Lock is already {text}.", profile + 1);
+        return Ok(());
+    }
+
+    let undo_file = save_change(profile, &KEYS_CAPSLOCK, &current)?;
+    isku.write_profile_report(profile, &KEYS_CAPSLOCK, &updated)?;
+    println!(
+        "Profile {}: Caps Lock is now {text}. Read back and confirmed.",
         profile + 1
     );
     println!("Before this change: {}", undo_file.display());
