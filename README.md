@@ -37,9 +37,6 @@ keys and the Easy-Shift zone.
     cargo run -- undo                 # put back the last changed report, run again to go further back
     cargo run -- activate <1-5>       # switch the active profile
 
-Report formats come from the Linux driver and roccat-tools, both GPL. Check the
-licence before publishing this.
-
 Nothing that writes to the keyboard belongs in `main` until it has been tried
 on a spare profile. Firmware commands are never used.
 
@@ -50,3 +47,17 @@ numbers and F-keys are the same.
 Special actions for `set`: `off`, `profile-up`, `profile-down`,
 `profile-cycle`, `profile-1` to `profile-5`, `easyshift`. Media actions only
 work on the media key row, so they are not offered for other keys.
+
+## Licence
+
+GPL version 2 or (at your option) any later version, see `LICENSE`.
+
+The report formats come from two GPL projects, so this tool uses the same
+licence:
+
+- the Linux kernel's Roccat Isku driver (`drivers/hid/hid-roccat-isku.c`) by
+  Stefan Achatz
+- roccat-tools by Stefan Achatz
+
+Roccat and Isku are trademarks of their owners. This project is not affiliated
+with them.

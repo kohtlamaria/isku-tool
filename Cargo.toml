@@ -2,7 +2,8 @@
 name = "isku-tool"
 version = "0.1.0"
 edition = "2021"
-description = "Reads settings from a Roccat Isku keyboard"
+description = "Reads and changes settings on a Roccat Isku keyboard"
+license = "GPL-2.0-or-later"
 publish = false
 
 [dependencies]
