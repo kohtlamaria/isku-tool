@@ -100,6 +100,19 @@ Confirmed on Profile 5: an Easy-Shift zone key (Shift+Q) written as a b8
 shortcut typed 7, and as Shift+7 typed `/` on an Estonian layout. So the zone
 takes shortcuts, and the modifier bits are right (bit 1 = Shift).
 
+Confirmed on Profile 5 (T1 as a b8 shortcut, checked with a key tester):
+Ctrl+F5 typed Ctrl+F5, Alt+F5 typed Alt+F5, and Win+E opened File Explorer.
+So all four modifier bits are right, and F-keys work as shortcut keys.
+
+Confirmed on Profile 5: M1 written as a b8 shortcut Ctrl+7 typed Ctrl+7, so
+the macro key report (keys_macro) takes shortcuts like the thumb keys.
+
+Confirmed on Profile 5: T2 written as `off` (00) typed nothing.
+
+Confirmed on Profile 5: T2 written as `easyshift` (ff) works as an Easy-Shift
+key. Holding T2 and pressing T1 typed 2, the Shift+T1 macro, instead of T1's
+own Win+E.
+
 Tested on Profile 5 (F11, F12, T3):
 
 - b3 (profile 1) works on an F-key: the keyboard switched profile.
@@ -110,5 +123,5 @@ Tested on Profile 5 (F11, F12, T3):
 
 ## Next questions
 
-1. Confirm Ctrl, Alt and Win bits the same way as Shift.
-2. M1-M5 writes, `off` (00) and `easyshift` (ff) on other keys are untested.
+1. M2-M5 and Easy-Shift M writes are untested (M1 works). They use the same
+   report as M1, so they are expected to work.
