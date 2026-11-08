@@ -11,13 +11,14 @@
 //! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
 //! cargo run -- light 2 default      factory lighting
 //! cargo run -- set 2 CapsLock off   Caps Lock: easyshift, capslock, off or default
+//! cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  make a key play a macro
 //! cargo run -- copy 5 2             copy profile 5's keys and lighting to profile 2
 //! cargo run -- undo                 put back the last command's changes
 //! cargo run -- activate <1-5>       switch the active profile
 
 mod commands;
 
-use commands::{cleanup, light, new_backup_folder, profiles, set, show, undo};
+use commands::{cleanup, light, macros, new_backup_folder, profiles, set, show, undo};
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -26,7 +27,7 @@ fn main() -> Result<(), String> {
     // Commands that save backups or change files tidy up after themselves.
     let saves_files = matches!(
         args.first(),
-        Some(&("backup" | "set" | "light" | "reset" | "restore" | "copy" | "undo"))
+        Some(&("backup" | "set" | "macro" | "light" | "reset" | "restore" | "copy" | "undo"))
     );
     if result.is_ok() && saves_files {
         cleanup::cleanup();
@@ -39,6 +40,7 @@ fn run(args: &[&str]) -> Result<(), String> {
         [] => show::show(None),
         ["backup"] => show::show(Some(&new_backup_folder()?)),
         ["set", profile, label, value] => set::set_key(profile, label, value),
+        ["macro", profile, label, text] => macros::set_macro(profile, label, text),
         ["restore", folder, profile] => profiles::restore(folder, profile),
         ["activate", number] => profiles::activate(number),
         ["copy", from, to] => profiles::copy(from, to),
@@ -47,7 +49,7 @@ fn run(args: &[&str]) -> Result<(), String> {
         ["light", number, setting] => light::set_light(number, setting, None),
         ["light", number, setting, value] => light::set_light(number, setting, Some(value)),
         _ => Err(
-            "use: backup, set <1-5> T1 7, restore <folder> <1-5>, reset <1-5>, undo, light <1-5> ..., copy <from> <to> or activate <1-5>".to_string(),
+            "use: backup, set <1-5> T1 7, macro <1-5> T1 \"Ctrl+C\", restore <folder> <1-5>, reset <1-5>, undo, light <1-5> ..., copy <from> <to> or activate <1-5>".to_string(),
         ),
     }
 }

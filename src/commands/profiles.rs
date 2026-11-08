@@ -7,8 +7,8 @@
 use super::{backup_file_name, profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe_light, for_profile, valid_profile_report, with_all_defaults, with_capslock,
-    with_light, Report, ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS,
+    bindings, describe_light, for_profile, key_label, valid_profile_report, with_all_defaults,
+    with_capslock, with_light, Report, ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS,
     KEYS_CAPSLOCK, LIGHT, LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_REPORTS, THUMB_KEYS,
     write_order,
 };
@@ -114,7 +114,7 @@ pub fn reset(number: &str) -> Result<(), String> {
 }
 
 /// Copies every key and lighting setting from one profile to another. Macros
-/// are separate reports that the tool cannot write yet, so keys that play a
+/// are separate reports that `copy` does not copy yet, so keys that play a
 /// macro are listed with a warning.
 pub fn copy(from: &str, to: &str) -> Result<(), String> {
     let from = profile_arg(from)?;
@@ -136,14 +136,9 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
         for group in [&THUMB_KEYS, &MACRO_KEYS, &EASYZONE_KEYS] {
             if group.report.id == report.id {
                 let keys = bindings(&source, group.labels.len()).ok_or("bad key report")?;
-                for (label, binding) in group.labels.iter().zip(keys) {
+                for (position, binding) in keys.iter().enumerate() {
                     if binding.action == ACTION_MACRO {
-                        let shift = if group.report.id == EASYZONE_KEYS.report.id {
-                            "Shift+"
-                        } else {
-                            ""
-                        };
-                        macro_keys.push(format!("{shift}{label}"));
+                        macro_keys.push(key_label(group, position));
                     }
                 }
             }

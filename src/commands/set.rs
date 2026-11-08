@@ -4,7 +4,7 @@ use super::{profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     action_code, capslock_action, capslock_of, describe_capslock, find_key, is_easyshift, parse_shortcut, shortcut_text,
-    with_action, with_capslock, with_default, with_shortcut, EASYZONE_KEYS, KEYS_CAPSLOCK,
+    key_label, with_action, with_capslock, with_default, with_shortcut, KEYS_CAPSLOCK,
 };
 
 pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
@@ -52,11 +52,7 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         ),
     };
     let updated = updated.ok_or("bad key report")?;
-    let name = if group.report.id == EASYZONE_KEYS.report.id {
-        format!("Shift+{}", group.labels[position])
-    } else {
-        group.labels[position].to_string()
-    };
+    let name = key_label(group, position);
     if updated == current {
         println!("Profile {}: {name} is already {text}.", profile + 1);
         return Ok(());

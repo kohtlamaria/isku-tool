@@ -19,8 +19,8 @@ keys and the Easy-Shift zone.
 - `commands/` has one file per command, and `main.rs` only reads the arguments.
 - Only `backup` makes full backups (`backups/backup-<time>/`), and they are
   never deleted automatically.
-- `set`, `light`, `reset`, `restore` and `copy` keep the bytes from before
-  they change anything in one folder per command, like
+- `set`, `macro`, `light`, `reset`, `restore` and `copy` keep the bytes from
+  before they change anything in one folder per command, like
   `backups/changes/<time>-reset-2/`. `undo` puts a whole command back in one
   run, and renames its folder to `.undone`.
 - Commands that save files clean up `backups/` afterwards, deleting only
@@ -38,6 +38,7 @@ keys and the Easy-Shift zone.
     cargo run -- set 2 Shift+Q default  # put a zone, F- or media key back to normal
     cargo run -- set 2 T3 profile-cycle # special actions, see below
     cargo run -- set 2 CapsLock off   # Caps Lock: easyshift, capslock, off or default
+    cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  # T1 plays this macro
     cargo run -- copy 5 2             # copy profile 5's keys and lighting to profile 2
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
@@ -57,9 +58,16 @@ Special actions for `set`: `off`, `profile-up`, `profile-down`,
 `profile-cycle`, `profile-1` to `profile-5`, `easyshift`. Media actions only
 work on the media key row, so they are not offered for other keys.
 
-`copy` copies keys, Caps Lock and lighting, but not macros yet: those are
-separate reports the tool cannot write. A copied key that plays a macro plays
-the target profile's macro in that slot, and `copy` lists those keys.
+`macro` works on T1-T3, M1-M5 and their Easy-Shift versions (`Shift+T1`,
+`Shift+M1`), and the Easy-Shift zone (`Shift+Q`). Each step is a key or
+shortcut, pressed and released, and `wait N` waits N milliseconds. `undo`
+puts back the old macro; a slot that held none gets an empty macro, which
+plays nothing.
+
+`copy` and `restore` put back keys, Caps Lock and lighting, but not macros
+yet. A copied key that plays a macro plays the target profile's macro in that
+slot, and `copy` lists those keys. After `restore`, a macro changed with
+`macro` since the backup stays changed; use `undo` for that.
 
 ## Licence
 

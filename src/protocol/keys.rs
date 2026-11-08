@@ -195,7 +195,15 @@ pub fn key_code(name: &str) -> Option<u8> {
         .map(|(code, _)| *code)
 }
 
-const MODIFIERS: [(u8, &str); 4] = [(2, "Ctrl"), (1, "Shift"), (3, "Alt"), (4, "Win")];
+/// Shortcut modifiers: the bit each sets in a key report, its name, and the HID
+/// code of its left-hand key, which macros press. Listed in the order
+/// shortcuts are written and macros press them.
+pub(crate) const MODIFIERS: [(u8, &str, u8); 4] = [
+    (2, "Ctrl", 0xe0),
+    (1, "Shift", 0xe1),
+    (3, "Alt", 0xe2),
+    (4, "Win", 0xe3),
+];
 
 /// Reads a shortcut such as `7`, `F5` or `Ctrl+Alt+Z` into a modifier mask and
 /// a key code. Each modifier may appear once, and the key comes last.
@@ -204,9 +212,9 @@ pub fn parse_shortcut(text: &str) -> Option<(u8, u8)> {
     let key = key_code(parts.pop()?)?;
     let mut modifier = 0u8;
     for part in parts {
-        let (bit, _) = MODIFIERS
+        let (bit, _, _) = MODIFIERS
             .iter()
-            .find(|(_, name)| name.eq_ignore_ascii_case(part))?;
+            .find(|(_, name, _)| name.eq_ignore_ascii_case(part))?;
         if modifier & (1 << bit) != 0 {
             return None;
         }
@@ -218,7 +226,7 @@ pub fn parse_shortcut(text: &str) -> Option<(u8, u8)> {
 /// Writes a shortcut the way `parse_shortcut` reads it.
 pub fn shortcut_text(modifier: u8, key: u8) -> String {
     let mut text = String::new();
-    for (bit, name) in MODIFIERS {
+    for (bit, name, _) in MODIFIERS {
         if modifier & (1 << bit) != 0 {
             text.push_str(name);
             text.push('+');
@@ -290,6 +298,17 @@ pub fn describe(binding: Binding) -> String {
         Some(name) => format!("{name} (0x{:02x})", binding.action),
         None if binding.action < 0x80 => format!("key {}", key_name(binding.action)),
         None => format!("unknown action (0x{:02x})", binding.action),
+    }
+}
+
+/// How a key is named to people: its label, with `Shift+` in front for the
+/// Easy-Shift zone, whose labels are plain keys.
+pub fn key_label(group: &KeyGroup, position: usize) -> String {
+    let label = group.labels.get(position).copied().unwrap_or("?");
+    if group.report.id == EASYZONE_KEYS.report.id {
+        format!("Shift+{label}")
+    } else {
+        label.to_string()
     }
 }
 

@@ -131,6 +131,22 @@ copying a key that plays a macro to another profile) makes the keyboard answer
 status 4 instead of 1. Seen on Profile 5, M1 and M2 (indexes 00 and 01).
 Pressing M1 then did nothing.
 
+Macro writes, confirmed on Profile 5:
+
+- A macro report is written whole as a feature report (0x0e, 2083 bytes),
+  like the key reports, then the status goes OK. The keyboard answered busy
+  about 14 times first, so writing a macro takes about 0.3 s.
+- Writing T1's macro (slot 1e) back unchanged read back the same bytes.
+- T1's macro changed from "1" to "2" typed 2, and undo brought back 1.
+- M1 (slot 00) held no macro. A "7" macro written there typed 7. Undo wrote a
+  macro with no keystrokes there, after which M1 typed nothing.
+- Shift+T1 (quicklaunch, slot 21) set to a "8" macro typed 8 with Easy-Shift
+  held. Undo put back the key report, then the old macro.
+- Every macro in our backups (90) rebuilds byte for byte from its parsed
+  fields, when bytes 5-30 are kept as they were. Byte 5 is always be and
+  byte 6 (loop) 1. Bytes 7-30 are zero except one profile 2 slot, which
+  holds "ISKU". A 24-character name has no closing zero.
+
 ## Next questions
 
 1. M2-M5 and Easy-Shift M writes are untested (M1 works). They use the same

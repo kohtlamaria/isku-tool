@@ -2,13 +2,17 @@
 
 pub mod cleanup;
 pub mod light;
+pub mod macros;
 pub mod profiles;
 pub mod set;
 pub mod show;
 pub mod undo;
 
-use isku_tool::device::{check_writable, Isku};
-use isku_tool::protocol::{parse_change_name, profile_index, Report, THUMB_KEYS};
+use isku_tool::device::{check_macro_writable, check_writable, Isku};
+use isku_tool::protocol::{
+    empty_macro_file_name, macro_file_name, parse_change_name, profile_index, valid_macro_report,
+    Report, THUMB_KEYS,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -186,13 +190,13 @@ impl ChangeSet {
     /// first and are renamed into place, so a saved report is either
     /// complete or not there at all. If one command writes the same report
     /// twice, the first, oldest bytes are kept.
-    fn save_old_bytes(&mut self, profile: u8, report: &Report, current: &[u8]) -> Result<(), String> {
+    fn save_old_bytes(&mut self, file_name: &str, current: &[u8]) -> Result<(), String> {
         let folder = self.open_folder()?;
-        let file = folder.join(backup_file_name(profile, report));
+        let file = folder.join(file_name);
         if file.exists() {
             return Ok(());
         }
-        let temporary = folder.join(format!("{}.tmp", backup_file_name(profile, report)));
+        let temporary = folder.join(format!("{file_name}.tmp"));
         let saved = fs::write(&temporary, current).and_then(|()| fs::rename(&temporary, &file));
         if let Err(e) = saved {
             let _ = fs::remove_file(&temporary);
@@ -218,11 +222,56 @@ impl ChangeSet {
         updated: &[u8],
     ) -> Result<(), String> {
         check_writable(profile, report, updated).map_err(|e| self.with_undo_note(e, profile))?;
-        self.save_old_bytes(profile, report, current)
+        self.save_old_bytes(&backup_file_name(profile, report), current)
             .map_err(|e| self.with_undo_note(e, profile))?;
         self.sent = true;
         isku.write_profile_report(profile, report, updated)
             .map_err(|e| self.with_undo_note(e, profile))
+    }
+
+    /// Writes one macro after saving the one it replaces, the same way as
+    /// `write`. A slot that held no macro is noted with an empty `.empty`
+    /// file, since there are no old bytes to save. A slot whose macro
+    /// `undo` could not put back is refused before anything is saved.
+    pub fn write_macro(
+        &mut self,
+        isku: &Isku,
+        profile: u8,
+        key_index: u8,
+        current: Option<&[u8]>,
+        updated: &[u8],
+    ) -> Result<(), String> {
+        check_macro_writable(profile, key_index, updated)
+            .map_err(|e| self.with_undo_note(e, profile))?;
+        if current.is_some_and(|bytes| !valid_macro_report(profile, key_index, bytes)) {
+            let error = format!(
+                "macro 0x{key_index:02x}: the macro in this slot has an unexpected layout, \
+                 so it could not be put back with undo. Nothing was written for it."
+            );
+            return Err(self.with_undo_note(error, profile));
+        }
+        let full = macro_file_name(profile, key_index);
+        let empty = empty_macro_file_name(profile, key_index);
+        // Keep the first, oldest state of the slot, whichever file holds it.
+        let saved = if self.has_saved(&full) || self.has_saved(&empty) {
+            Ok(())
+        } else {
+            match current {
+                Some(bytes) => self.save_old_bytes(&full, bytes),
+                None => self.save_old_bytes(&empty, &[]),
+            }
+        };
+        saved.map_err(|e| self.with_undo_note(e, profile))?;
+        self.sent = true;
+        isku.write_macro(profile, key_index, updated)
+            .map_err(|e| self.with_undo_note(e, profile))
+    }
+
+    /// True when this change already saved a file with this name.
+    fn has_saved(&self, file_name: &str) -> bool {
+        self.folder
+            .as_ref()
+            .is_some_and(|folder| folder.join(file_name).exists())
     }
 
     /// Adds how to put things back to an error, once a report was sent to

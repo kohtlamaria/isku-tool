@@ -1,9 +1,11 @@
-//! Talks to the keyboard. Three things can be sent: the select command, the
-//! active profile, and per-profile key and light reports. Reports must be
-//! valid for their profile and are read back after writing.
+//! Talks to the keyboard. Four things can be sent: the select command, the
+//! active profile, per-profile key and light reports, and macros. Reports
+//! and macros must be valid for their profile and are read back after
+//! writing.
 
 use crate::protocol::{
-    actual_profile_report, checksum_ok, control_report, valid_profile_report, Report,
+    actual_profile_report, checksum_ok, control_report, valid_macro_report, valid_profile_report,
+    Report,
     ACTUAL_PROFILE, CONTROL_REPORT_ID, FEATURE_BUFFER_LEN, MACRO_REPORT_ID, PRODUCT_ID,
     PROFILE_COUNT, PROFILE_REPORTS, SETTINGS_USAGE_PAGE, STATUS_BUSY, STATUS_EMPTY, STATUS_OK,
     VENDOR_ID,
@@ -237,6 +239,29 @@ impl Isku {
             Ok(())
         })
         .map(Some)
+    }
+
+    /// Writes one macro, then reads it back to confirm.
+    pub fn write_macro(&self, profile: u8, key_index: u8, bytes: &[u8]) -> Result<(), String> {
+        check_macro_writable(profile, key_index, bytes)?;
+        self.send_and_wait(bytes, WRITE_WAIT)?;
+        match self.read_macro(profile, key_index)? {
+            Some(back) if back == bytes => Ok(()),
+            Some(_) => Err(format!("macro 0x{key_index:02x}: read back different bytes")),
+            None => Err(format!("macro 0x{key_index:02x}: the slot is empty after writing")),
+        }
+    }
+}
+
+/// The check every macro write passes before anything is sent: only a
+/// complete, valid macro for that profile and slot.
+pub fn check_macro_writable(profile: u8, key_index: u8, bytes: &[u8]) -> Result<(), String> {
+    if valid_macro_report(profile, key_index, bytes) {
+        Ok(())
+    } else {
+        Err(format!(
+            "macro 0x{key_index:02x}: refusing to write an invalid macro"
+        ))
     }
 }
 

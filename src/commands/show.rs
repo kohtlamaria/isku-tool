@@ -3,7 +3,8 @@
 use super::{backup_file_name, save};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro, parse_light, parse_macro, KeyGroup,
+    bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro,
+    macro_file_name, macro_slot, parse_light, parse_macro, KeyGroup,
     ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, LAST_SET, LIGHT, MACRO_KEYS, MEDIA_KEYS,
     KEYS_CAPSLOCK, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
@@ -22,23 +23,21 @@ fn show_group(
     println!("  {}", group.title);
     let mut shown = 0;
     for (i, (label, binding)) in group.labels.iter().zip(&keys).enumerate() {
-        let key_index = group.first_macro_index + i as u8;
         let mut detail = describe(*binding);
         if binding.action == ACTION_MACRO {
             // A key can point at a macro slot that holds nothing, for example
             // after `copy`. Any other read error still stops the listing.
-            match isku.read_macro(profile, key_index)? {
-                Some(bytes) => {
-                    save(
-                        folder,
-                        &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1),
-                        &bytes,
-                    )?;
-                    if let Some(value) = parse_macro(&bytes) {
-                        detail = format!("macro {}", describe_macro(&value));
+            match macro_slot(group, i) {
+                None => detail = "macro, but this key has no macro slot".to_string(),
+                Some(key_index) => match isku.read_macro(profile, key_index)? {
+                    Some(bytes) => {
+                        save(folder, &macro_file_name(profile, key_index), &bytes)?;
+                        if let Some(value) = parse_macro(&bytes) {
+                            detail = format!("macro {}", describe_macro(&value));
+                        }
                     }
-                }
-                None => detail = "macro, but none is saved in this slot".to_string(),
+                    None => detail = "macro, but none is saved in this slot".to_string(),
+                },
             }
         }
         let unchanged = group.defaults.is_some_and(|d| binding.action == d[i]);

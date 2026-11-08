@@ -20,7 +20,7 @@ pub(crate) fn easyzone() -> Vec<u8> {
     report
 }
 
-pub(crate) fn macro_report(name: &str, strokes: &[(u8, u8)]) -> Vec<u8> {
+pub(crate) fn sample_macro(name: &str, strokes: &[(u8, u8)]) -> Vec<u8> {
     let mut report = vec![0u8; FEATURE_BUFFER_LEN];
     report[0] = MACRO_REPORT_ID;
     report[1..3].copy_from_slice(&0x0823u16.to_le_bytes());
