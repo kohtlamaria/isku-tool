@@ -6,9 +6,11 @@ pub mod set;
 pub mod show;
 pub mod undo;
 
+use isku_tool::device::{check_writable, Isku};
 use isku_tool::protocol::{parse_change_name, profile_index, Report, THUMB_KEYS};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn save(folder: Option<&Path>, name: &str, bytes: &[u8]) -> Result<(), String> {
@@ -43,23 +45,83 @@ pub fn new_backup_folder() -> Result<PathBuf, String> {
     }
 }
 
-/// A time for the next change file that is later than every change file
-/// already saved, undone or not, so `undo` always finds the newest one.
-fn next_change_time(folder: &Path) -> Result<u64, String> {
-    let last = fs::read_dir(folder)
-        .map_err(|e| e.to_string())?
+/// Where `undo` keeps the bytes from before each change.
+pub fn changes_folder() -> PathBuf {
+    PathBuf::from("backups").join("changes")
+}
+
+/// One file in the changes folder.
+pub struct Change {
+    pub time: u64,
+    pub name: String,
+    pub profile: u8,
+    pub report: Report,
+    /// Already used by `undo`, or set aside as invalid (`.bad`).
+    pub done: bool,
+}
+
+/// Every change file, including undone and invalid ones, so new change
+/// files never reuse their names. Other files are ignored.
+pub fn list_changes() -> Result<Vec<Change>, String> {
+    let entries = match fs::read_dir(changes_folder()) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.to_string()),
+    };
+    Ok(entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let name = name.strip_suffix(".undone").unwrap_or(&name);
-            parse_change_name(name).map(|(time, _, _)| time)
+            let base = name
+                .strip_suffix(".undone")
+                .or_else(|| name.strip_suffix(".bad"))
+                .unwrap_or(&name);
+            let done = base.len() != name.len();
+            let (time, profile, report) = parse_change_name(base)?;
+            Some(Change {
+                time,
+                name,
+                profile,
+                report,
+                done,
+            })
         })
-        .max();
-    let now = timestamp()?;
-    Ok(match last {
-        Some(last) if last >= now => last + 1,
-        _ => now,
-    })
+        .collect())
+}
+
+/// The last change time used by this run, 0 before the first change.
+static LAST_CHANGE_TIME: AtomicU64 = AtomicU64::new(0);
+
+/// A time for the next change file that is later than every change file
+/// already saved, undone or not, so `undo` always finds the newest one. The
+/// changes folder is listed only once per run; this run's own later files
+/// are covered by remembering the last time used.
+fn next_change_time() -> Result<u64, String> {
+    let mut last = LAST_CHANGE_TIME.load(Ordering::Relaxed);
+    if last == 0 {
+        last = list_changes()?.iter().map(|c| c.time).max().unwrap_or(0);
+    }
+    let next = timestamp()?.max(last + 1);
+    LAST_CHANGE_TIME.store(next, Ordering::Relaxed);
+    Ok(next)
+}
+
+/// Writes one report after saving its old bytes, so `undo` can put it back.
+/// A report the keyboard would refuse is rejected before anything is saved.
+/// If the write itself fails, the change file is kept, because a write that
+/// timed out can still land.
+pub fn write_with_undo(
+    isku: &Isku,
+    profile: u8,
+    report: &Report,
+    current: &[u8],
+    updated: &[u8],
+) -> Result<PathBuf, String> {
+    check_writable(profile, report, updated)?;
+    let file = save_change(profile, report, current)?;
+    isku.write_profile_report(profile, report, updated)
+        .map_err(|e| format!("{e} (the bytes from before are in {})", file.display()))?;
+    Ok(file)
 }
 
 /// The file name of one report in a backup folder.
@@ -74,12 +136,12 @@ pub fn has_backup(profile: u8) -> bool {
 }
 
 /// Saves a report's bytes from just before a change, so `undo` can put it back.
-pub fn save_change(profile: u8, report: &Report, bytes: &[u8]) -> Result<PathBuf, String> {
-    let folder = PathBuf::from("backups").join("changes");
+fn save_change(profile: u8, report: &Report, bytes: &[u8]) -> Result<PathBuf, String> {
+    let folder = changes_folder();
     fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
     let file = folder.join(format!(
         "{}-profile-{}-{}.bin",
-        next_change_time(&folder)?,
+        next_change_time()?,
         profile + 1,
         report.name
     ));

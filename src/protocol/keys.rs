@@ -364,22 +364,19 @@ pub fn with_all_defaults(report: &[u8], group: &KeyGroup) -> Option<Vec<u8>> {
 }
 
 /// Caps Lock as Easy-Shift, which is the factory setting in roccat-tools.
-pub const CAPSLOCK_DEFAULT: u8 = 0xff;
+pub const CAPSLOCK_DEFAULT: u8 = ACTION_EASYSHIFT;
 
 /// What `set <profile> CapsLock ...` accepts. The Caps Lock report has one
 /// action byte and no room for a shortcut.
 pub const CAPSLOCK_ACTIONS: &[(&str, u8)] = &[
-    ("easyshift", 0xff),
+    ("easyshift", ACTION_EASYSHIFT),
     ("capslock", 0x39),
-    ("off", 0x00),
+    ("off", ACTION_OFF),
     ("default", CAPSLOCK_DEFAULT),
 ];
 
 pub fn capslock_action(name: &str) -> Option<u8> {
-    CAPSLOCK_ACTIONS
-        .iter()
-        .find(|(n, _)| n.eq_ignore_ascii_case(name))
-        .map(|(_, code)| *code)
+    code_by_name(CAPSLOCK_ACTIONS, name)
 }
 
 pub fn describe_capslock(action: u8) -> String {
@@ -396,6 +393,11 @@ pub fn describe_capslock(action: u8) -> String {
 /// The Caps Lock action byte of a valid Caps Lock report.
 pub fn capslock_of(report: &[u8]) -> Option<u8> {
     (report.len() == KEYS_CAPSLOCK.len && report[0] == KEYS_CAPSLOCK.id).then(|| report[3])
+}
+
+/// True for both Easy-Shift codes, 0xff and the old software's 0x8c.
+pub fn is_easyshift(action: u8) -> bool {
+    action == ACTION_EASYSHIFT || action == ACTION_EASYSHIFT_OLD
 }
 
 /// Returns a copy of a Caps Lock report with a new action and checksum.
@@ -644,10 +646,13 @@ mod tests {
         from_8c[2] = 0x04;
         let sum = checksum(&from_8c[..4]);
         from_8c[4..].copy_from_slice(&sum.to_le_bytes());
+        // The factory code is written even over the old Easy-Shift code.
         assert_eq!(
             with_capslock(&from_8c, CAPSLOCK_DEFAULT).unwrap(),
             profile_5
         );
+        assert!(is_easyshift(0x8c) && is_easyshift(0xff));
+        assert!(!is_easyshift(0x39) && !is_easyshift(ACTION_OFF));
         assert!(valid_profile_report(&KEYS_CAPSLOCK, 4, &profile_5));
         assert_eq!(with_capslock(&THUMBSTER, CAPSLOCK_DEFAULT), None);
     }

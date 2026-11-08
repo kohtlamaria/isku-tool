@@ -8,7 +8,7 @@ use super::*;
 /// do not: the 0xa0 codes only work on the media key row, and the 0xc0-0xd2
 /// codes did nothing without Roccat's software, so neither is offered.
 pub const ACTIONS: &[(&str, u8)] = &[
-    ("off", 0x00),
+    ("off", ACTION_OFF),
     ("profile-up", 0xb0),
     ("profile-down", 0xb1),
     ("profile-cycle", 0xb2),
@@ -17,14 +17,24 @@ pub const ACTIONS: &[(&str, u8)] = &[
     ("profile-3", 0xb5),
     ("profile-4", 0xb6),
     ("profile-5", 0xb7),
-    ("easyshift", 0xff),
+    ("easyshift", ACTION_EASYSHIFT),
 ];
 
-pub fn action_code(name: &str) -> Option<u8> {
-    ACTIONS
+pub const ACTION_OFF: u8 = 0x00;
+pub const ACTION_EASYSHIFT: u8 = 0xff;
+/// The other Easy-Shift code. The old software stored this one on profile 1.
+pub const ACTION_EASYSHIFT_OLD: u8 = 0x8c;
+
+/// Looks a name up in a table of named action codes, ignoring case.
+pub fn code_by_name(table: &[(&str, u8)], name: &str) -> Option<u8> {
+    table
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(name))
         .map(|(_, code)| *code)
+}
+
+pub fn action_code(name: &str) -> Option<u8> {
+    code_by_name(ACTIONS, name)
 }
 
 /// Returns a copy of a key report with one key set to a special action.

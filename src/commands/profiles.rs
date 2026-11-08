@@ -1,6 +1,6 @@
 //! Whole-profile commands: `restore`, `reset` and `activate`.
 
-use super::{backup_file_name, new_backup_folder, profile_arg, save, save_change};
+use super::{backup_file_name, new_backup_folder, profile_arg, save, write_with_undo};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe_light, for_profile, Report, ACTION_MACRO, MACRO_KEYS, THUMB_KEYS, valid_profile_report, with_all_defaults, with_capslock, with_light,
@@ -120,9 +120,13 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
     }
     println!("Saved profile {} to {}", to + 1, folder.display());
 
-    let mut changed = 0;
+    // Read and check every source report before writing anything, so a bad
+    // source report stops the copy before the target changes. A write that
+    // fails partway can still leave it partly copied; the error then says
+    // how to restore it.
+    let mut copies = Vec::new();
     let mut macro_keys = Vec::new();
-    for (report, current) in PROFILE_REPORTS.iter().zip(&target) {
+    for report in &PROFILE_REPORTS {
         let source = isku.read_profile_report(from, report)?;
         let updated = for_profile(report, from, &source, to)
             .ok_or_else(|| format!("profile {} has a bad {} report", from + 1, report.name))?;
@@ -141,8 +145,20 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
                 }
             }
         }
-        if updated != *current {
-            write_with_undo(&isku, to, report, current, &updated)?;
+        copies.push(updated);
+    }
+
+    let mut changed = 0;
+    for ((report, current), updated) in PROFILE_REPORTS.iter().zip(&target).zip(&copies) {
+        if updated != current {
+            write_with_undo(&isku, to, report, current, updated).map_err(|e| {
+                format!(
+                    "{e}\nProfile {} may be partly copied. Put it back with: cargo run -- restore {} {}",
+                    to + 1,
+                    folder.display(),
+                    to + 1
+                )
+            })?;
             println!("Copied {}", report.name);
             changed += 1;
         }
@@ -166,19 +182,6 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
         to + 1
     );
     Ok(())
-}
-
-/// Writes one report and saves its old bytes first, so `undo` steps back
-/// through reset and restore too, in the order the writes happened.
-fn write_with_undo(
-    isku: &Isku,
-    profile: u8,
-    report: &Report,
-    current: &[u8],
-    updated: &[u8],
-) -> Result<(), String> {
-    save_change(profile, report, current)?;
-    isku.write_profile_report(profile, report, updated)
 }
 
 pub fn activate(number: &str) -> Result<(), String> {

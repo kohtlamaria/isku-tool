@@ -1,9 +1,9 @@
 //! `set`: change one key on one profile.
 
-use super::{profile_arg, require_backup, save_change};
+use super::{profile_arg, require_backup, write_with_undo};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    action_code, capslock_action, describe_capslock, find_key, parse_shortcut, shortcut_text,
+    action_code, capslock_action, capslock_of, describe_capslock, find_key, is_easyshift, parse_shortcut, shortcut_text,
     with_action, with_capslock, with_default, with_shortcut, EASYZONE_KEYS, KEYS_CAPSLOCK,
 };
 
@@ -62,8 +62,7 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let undo_file = save_change(profile, &group.report, &current)?;
-    isku.write_profile_report(profile, &group.report, &updated)?;
+    let undo_file = write_with_undo(&isku, profile, &group.report, &current, &updated)?;
     println!(
         "Profile {}: {name} is now {text}. Read back and confirmed.",
         profile + 1
@@ -80,15 +79,20 @@ fn set_capslock(profile: u8, value: &str) -> Result<(), String> {
 
     let isku = Isku::open()?;
     let current = isku.read_profile_report(profile, &KEYS_CAPSLOCK)?;
+    let stored = capslock_of(&current).ok_or("bad Caps Lock report")?;
     let updated = with_capslock(&current, action).ok_or("bad Caps Lock report")?;
-    let text = describe_capslock(action);
-    if updated == current {
-        println!("Profile {}: Caps Lock is already {text}.", profile + 1);
+    // Both Easy-Shift codes do the same, so either one counts as already set.
+    if updated == current || (is_easyshift(action) && is_easyshift(stored)) {
+        println!(
+            "Profile {}: Caps Lock is already {}.",
+            profile + 1,
+            describe_capslock(stored)
+        );
         return Ok(());
     }
+    let text = describe_capslock(action);
 
-    let undo_file = save_change(profile, &KEYS_CAPSLOCK, &current)?;
-    isku.write_profile_report(profile, &KEYS_CAPSLOCK, &updated)?;
+    let undo_file = write_with_undo(&isku, profile, &KEYS_CAPSLOCK, &current, &updated)?;
     println!(
         "Profile {}: Caps Lock is now {text}. Read back and confirmed.",
         profile + 1

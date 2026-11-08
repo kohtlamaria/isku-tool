@@ -26,9 +26,9 @@ fn show_group(
         let mut detail = describe(*binding);
         if binding.action == ACTION_MACRO {
             // A key can point at a macro slot that holds nothing, for example
-            // after `copy`. The keyboard then answers with an error status.
-            match isku.read_macro(profile, key_index) {
-                Ok(bytes) => {
+            // after `copy`. Any other read error still stops the listing.
+            match isku.read_macro(profile, key_index)? {
+                Some(bytes) => {
                     save(
                         folder,
                         &format!("profile-{}-macro-{key_index:02x}.bin", profile + 1),
@@ -38,7 +38,7 @@ fn show_group(
                         detail = format!("macro {}", describe_macro(&value));
                     }
                 }
-                Err(e) => detail = format!("macro, but none is saved in this slot ({e})"),
+                None => detail = "macro, but none is saved in this slot".to_string(),
             }
         }
         let unchanged = group.defaults.is_some_and(|d| binding.action == d[i]);

@@ -5,7 +5,8 @@
 use crate::protocol::{
     actual_profile_report, checksum_ok, control_report, valid_profile_report, Report,
     ACTUAL_PROFILE, CONTROL_REPORT_ID, FEATURE_BUFFER_LEN, MACRO_REPORT_ID, PRODUCT_ID,
-    PROFILE_REPORTS, SETTINGS_USAGE_PAGE, STATUS_BUSY, STATUS_OK, VENDOR_ID,
+    PROFILE_COUNT, PROFILE_REPORTS, SETTINGS_USAGE_PAGE, STATUS_BUSY, STATUS_EMPTY, STATUS_OK,
+    VENDOR_ID,
 };
 use hidapi::{HidApi, HidDevice};
 use std::cell::Cell;
@@ -83,7 +84,9 @@ impl Isku {
             .map_err(|e| format!("reading report 0x{id:02x}: {e}"));
         self.stats.reads.set(self.stats.reads.get() + 1);
         add(&self.stats.read_time, start);
-        // hidapi counts the report id byte too, so a full report gives >= len.
+        // Catches short reads where hidapi reports the real size. On Windows it
+        // reports the padded buffer size, so callers also check each report's
+        // own length byte or checksum.
         let got = result?;
         if got < len {
             return Err(format!(
@@ -95,6 +98,12 @@ impl Isku {
     }
 
     fn send_and_wait(&self, bytes: &[u8], first_wait: Duration) -> Result<(), String> {
+        ok_status(self.send_and_status(bytes, first_wait)?)
+    }
+
+    /// Sends a command and waits until the keyboard is no longer busy, then
+    /// returns its status.
+    fn send_and_status(&self, bytes: &[u8], first_wait: Duration) -> Result<u8, String> {
         self.device
             .send_feature_report(bytes)
             .map_err(|e| format!("sending report 0x{:02x}: {e}", bytes[0]))?;
@@ -106,9 +115,8 @@ impl Isku {
             sleep(wait);
             add(&self.stats.wait_time, start);
             match self.read_raw(CONTROL_REPORT_ID, 3)?[1] {
-                STATUS_OK => return Ok(()),
                 STATUS_BUSY => self.stats.busy.set(self.stats.busy.get() + 1),
-                status => return Err(format!("keyboard answered status {status}")),
+                status => return Ok(status),
             }
             wait = POLL_WAIT;
         }
@@ -139,15 +147,28 @@ impl Isku {
     }
 
     fn select(&self, profile: u8, request: u8) -> Result<(), String> {
+        ok_status(self.select_status(profile, request)?)
+    }
+
+    /// Selects a report or macro and returns the keyboard's status.
+    fn select_status(&self, profile: u8, request: u8) -> Result<u8, String> {
         let command = control_report(profile, request).ok_or_else(|| {
             format!("refusing select: profile {profile}, request 0x{request:02x}")
         })?;
-        self.send_and_wait(&command, SELECT_WAIT)
+        self.send_and_status(&command, SELECT_WAIT)
     }
 
     /// The active profile, counted from 0.
     pub fn active_profile(&self) -> Result<u8, String> {
-        Ok(self.read_raw(ACTUAL_PROFILE.id, ACTUAL_PROFILE.len)?[2])
+        let bytes = self.read_raw(ACTUAL_PROFILE.id, ACTUAL_PROFILE.len)?;
+        // This report has no checksum, so check its id, length byte and value.
+        if bytes[0] != ACTUAL_PROFILE.id
+            || usize::from(bytes[1]) != ACTUAL_PROFILE.len
+            || bytes[2] >= PROFILE_COUNT
+        {
+            return Err(format!("bad actual_profile report: {bytes:02x?}"));
+        }
+        Ok(bytes[2])
     }
 
     pub fn activate_profile(&self, profile: u8) -> Result<(), String> {
@@ -189,15 +210,7 @@ impl Isku {
         report: &Report,
         bytes: &[u8],
     ) -> Result<(), String> {
-        if !PROFILE_REPORTS.iter().any(|r| r.id == report.id) {
-            return Err(format!("{} cannot be written", report.name));
-        }
-        if !valid_profile_report(report, profile, bytes) {
-            return Err(format!(
-                "{}: refusing to write an invalid report",
-                report.name
-            ));
-        }
+        check_writable(profile, report, bytes)?;
         self.send_and_wait(bytes, WRITE_WAIT)?;
         if self.read_profile_report(profile, report)? != bytes {
             return Err(format!("{}: read back different bytes", report.name));
@@ -205,8 +218,12 @@ impl Isku {
         Ok(())
     }
 
-    pub fn read_macro(&self, profile: u8, key_index: u8) -> Result<Vec<u8>, String> {
-        self.select(profile, key_index)?;
+    /// Reads one macro. Returns None when the slot holds no macro.
+    pub fn read_macro(&self, profile: u8, key_index: u8) -> Result<Option<Vec<u8>>, String> {
+        match self.select_status(profile, key_index)? {
+            STATUS_EMPTY => return Ok(None),
+            status => ok_status(status)?,
+        }
         self.read_until(MACRO_REPORT_ID, FEATURE_BUFFER_LEN, |bytes| {
             if !checksum_ok(bytes) {
                 return Err(format!("macro 0x{key_index:02x}: bad checksum"));
@@ -219,6 +236,29 @@ impl Isku {
             }
             Ok(())
         })
+        .map(Some)
+    }
+}
+
+/// The checks every write passes before anything is sent: only per-profile
+/// reports, and only complete, valid ones for that profile.
+pub fn check_writable(profile: u8, report: &Report, bytes: &[u8]) -> Result<(), String> {
+    if !PROFILE_REPORTS.iter().any(|r| r.id == report.id) {
+        return Err(format!("{} cannot be written", report.name));
+    }
+    if !valid_profile_report(report, profile, bytes) {
+        return Err(format!(
+            "{}: refusing to write an invalid report",
+            report.name
+        ));
+    }
+    Ok(())
+}
+
+fn ok_status(status: u8) -> Result<(), String> {
+    match status {
+        STATUS_OK => Ok(()),
+        status => Err(format!("keyboard answered status {status}")),
     }
 }
 

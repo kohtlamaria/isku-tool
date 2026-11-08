@@ -36,6 +36,8 @@ pub const MACRO_REPORT_ID: u8 = 0x0e;
 pub const STATUS_OK: u8 = 1;
 
 pub const STATUS_BUSY: u8 = 3;
+/// Seen when selecting a macro slot that holds no macro.
+pub const STATUS_EMPTY: u8 = 4;
 
 /// Keys 0x00 to 0x23 can hold macros, and selecting one uses its index as the request.
 pub const LAST_MACRO_KEY_INDEX: u8 = 0x23;
