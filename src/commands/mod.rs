@@ -243,13 +243,8 @@ impl ChangeSet {
     ) -> Result<(), String> {
         check_macro_writable(profile, key_index, updated)
             .map_err(|e| self.with_undo_note(e, profile))?;
-        if current.is_some_and(|bytes| !valid_macro_report(profile, key_index, bytes)) {
-            let error = format!(
-                "macro 0x{key_index:02x}: the macro in this slot has an unexpected layout, \
-                 so it could not be put back with undo. Nothing was written for it."
-            );
-            return Err(self.with_undo_note(error, profile));
-        }
+        check_undoable_macro(profile, key_index, current)
+            .map_err(|e| self.with_undo_note(e, profile))?;
         let full = macro_file_name(profile, key_index);
         let empty = empty_macro_file_name(profile, key_index);
         // Keep the first, oldest state of the slot, whichever file holds it.
@@ -296,6 +291,23 @@ impl ChangeSet {
             );
         }
     }
+}
+
+/// Refuses to replace a macro that `undo` could not put back, because it
+/// is not laid out the way the tool expects.
+pub fn check_undoable_macro(
+    profile: u8,
+    key_index: u8,
+    current: Option<&[u8]>,
+) -> Result<(), String> {
+    if current.is_some_and(|bytes| !valid_macro_report(profile, key_index, bytes)) {
+        return Err(format!(
+            "profile {}: the macro in slot 0x{key_index:02x} has an unexpected layout, so \
+             undo could not put it back. Nothing was written for it.",
+            profile + 1
+        ));
+    }
+    Ok(())
 }
 
 /// The file name of one report in a backup folder.

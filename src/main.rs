@@ -12,7 +12,7 @@
 //! cargo run -- light 2 default      factory lighting
 //! cargo run -- set 2 CapsLock off   Caps Lock: easyshift, capslock, off or default
 //! cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  make a key play a macro
-//! cargo run -- copy 5 2             copy profile 5's keys and lighting to profile 2
+//! cargo run -- copy 5 2             copy profile 5's keys, lighting and macros to profile 2
 //! cargo run -- undo                 put back the last command's changes
 //! cargo run -- activate <1-5>       switch the active profile
 

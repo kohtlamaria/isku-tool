@@ -39,7 +39,7 @@ keys and the Easy-Shift zone.
     cargo run -- set 2 T3 profile-cycle # special actions, see below
     cargo run -- set 2 CapsLock off   # Caps Lock: easyshift, capslock, off or default
     cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  # T1 plays this macro
-    cargo run -- copy 5 2             # copy profile 5's keys and lighting to profile 2
+    cargo run -- copy 5 2             # copy profile 5's keys, lighting and macros to profile 2
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
@@ -64,10 +64,14 @@ shortcut, pressed and released, and `wait N` waits N milliseconds. `undo`
 puts back the old macro; a slot that held none gets an empty macro, which
 plays nothing.
 
-`copy` and `restore` put back keys, Caps Lock and lighting, but not macros
-yet. A copied key that plays a macro plays the target profile's macro in that
-slot, and `copy` lists those keys. After `restore`, a macro changed with
-`macro` since the backup stays changed; use `undo` for that.
+`copy` and `restore` include macros. `copy` gives every key that plays a
+macro the source profile's macro; a source key whose slot is empty ends up
+playing nothing on both. `backup` saves the macro of every key that plays
+one, and notes slots that hold none. `restore` writes those macros back and
+gives the noted slots a macro that plays nothing. Slots no key used are not
+in a backup and are left as they are. Older backups, including the ones
+`reset` and `copy` used to make, may lack some or all macros; `restore`
+then leaves those alone and lists the keys.
 
 ## Licence
 

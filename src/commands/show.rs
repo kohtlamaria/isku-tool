@@ -4,7 +4,7 @@ use super::{backup_file_name, save};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro,
-    macro_file_name, macro_slot, parse_light, parse_macro, KeyGroup,
+    empty_macro_file_name, macro_file_name, macro_slot, parse_light, parse_macro, KeyGroup,
     ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, LAST_SET, LIGHT, MACRO_KEYS, MEDIA_KEYS,
     KEYS_CAPSLOCK, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
@@ -26,7 +26,8 @@ fn show_group(
         let mut detail = describe(*binding);
         if binding.action == ACTION_MACRO {
             // A key can point at a macro slot that holds nothing, for example
-            // after `copy`. Any other read error still stops the listing.
+            // after the old software or an older `copy`. Any other read
+            // error still stops the listing.
             match macro_slot(group, i) {
                 None => detail = "macro, but this key has no macro slot".to_string(),
                 Some(key_index) => match isku.read_macro(profile, key_index)? {
@@ -36,7 +37,12 @@ fn show_group(
                             detail = format!("macro {}", describe_macro(&value));
                         }
                     }
-                    None => detail = "macro, but none is saved in this slot".to_string(),
+                    None => {
+                        // Noted, so `restore` knows the slot was empty
+                        // rather than missing from the backup.
+                        save(folder, &empty_macro_file_name(profile, key_index), &[])?;
+                        detail = "macro, but none is saved in this slot".to_string();
+                    }
                 },
             }
         }

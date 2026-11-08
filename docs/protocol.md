@@ -142,6 +142,9 @@ Macro writes, confirmed on Profile 5:
   macro with no keystrokes there, after which M1 typed nothing.
 - Shift+T1 (quicklaunch, slot 21) set to a "8" macro typed 8 with Easy-Shift
   held. Undo put back the key report, then the old macro.
+- `copy 1 5` moved profile 1's macros to profile 5's same slots by changing
+  only the profile byte (3) and the checksum. T2 and T3 then typed profile
+  1's 2 and 3. `restore` wrote a backed-up macro back, and T1 typed it again.
 - Every macro in our backups (90) rebuilds byte for byte from its parsed
   fields, when bytes 5-30 are kept as they were. Byte 5 is always be and
   byte 6 (loop) 1. Bytes 7-30 are zero except one profile 2 slot, which

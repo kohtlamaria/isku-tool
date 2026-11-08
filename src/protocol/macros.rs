@@ -138,6 +138,29 @@ pub fn empty_macro_report(profile: u8, key_index: u8) -> Option<Vec<u8>> {
     build_macro(profile, key_index, &nothing)
 }
 
+/// Returns a copy of a valid macro moved to another profile's same slot: the
+/// profile byte is changed and the checksum recomputed.
+pub fn macro_for_profile(from: u8, key_index: u8, bytes: &[u8], to: u8) -> Option<Vec<u8>> {
+    if to >= PROFILE_COUNT || !valid_macro_report(from, key_index, bytes) {
+        return None;
+    }
+    let mut moved = bytes.to_vec();
+    moved[PROFILE_AT] = to;
+    let sum = checksum(&moved[..CHECKSUM_AT]);
+    moved[CHECKSUM_AT..].copy_from_slice(&sum.to_le_bytes());
+    Some(moved)
+}
+
+/// The key that plays a macro slot, named as people know it, such as `T1`
+/// or `Shift+Q`.
+pub fn slot_key_label(key_index: u8) -> Option<String> {
+    [&THUMB_KEYS, &MACRO_KEYS, &EASYZONE_KEYS]
+        .into_iter()
+        .flat_map(|group| (0..group.labels.len()).map(move |position| (group, position)))
+        .find(|(group, position)| macro_slot(group, *position) == Some(key_index))
+        .map(|(group, position)| key_label(group, position))
+}
+
 /// The header for a new macro in a slot: the old macro's, so the field
 /// roccat-tools does not explain stays as it was, but always of the macro
 /// type and played once, so the macro does what its text says. A slot with
@@ -348,6 +371,33 @@ mod tests {
         let header = header_for_new_macro(Some(&old));
         assert_eq!(header[..6], [MACRO_TYPE, 1, b'I', b'S', b'K', b'U']);
         assert_eq!(header_for_new_macro(None), NEW_MACRO_HEADER);
+    }
+
+    #[test]
+    fn macro_for_profile_moves_a_macro_and_keeps_it_valid() {
+        let mut report = sample_macro("Slot 1", &[(0x1e, 1), (0x1e, 2)]);
+        report[KEY_AT] = 0x1e;
+        let sum = checksum(&report[..CHECKSUM_AT]);
+        report[CHECKSUM_AT..].copy_from_slice(&sum.to_le_bytes());
+
+        let moved = macro_for_profile(0, 0x1e, &report, 4).unwrap();
+        assert!(valid_macro_report(4, 0x1e, &moved));
+        assert_eq!(parse_macro(&moved), parse_macro(&report));
+        assert_eq!(macro_for_profile(4, 0x1e, &moved, 0).unwrap(), report);
+        // Wrong source profile or slot, target out of range.
+        assert_eq!(macro_for_profile(1, 0x1e, &report, 4), None);
+        assert_eq!(macro_for_profile(0, 0x1f, &report, 4), None);
+        assert_eq!(macro_for_profile(0, 0x1e, &report, 5), None);
+    }
+
+    #[test]
+    fn slots_are_named_by_their_key() {
+        assert_eq!(slot_key_label(0x00).as_deref(), Some("M1"));
+        assert_eq!(slot_key_label(0x09).as_deref(), Some("Shift+M5"));
+        assert_eq!(slot_key_label(0x0a).as_deref(), Some("Shift+1"));
+        assert_eq!(slot_key_label(0x1e).as_deref(), Some("T1"));
+        assert_eq!(slot_key_label(0x23).as_deref(), Some("Shift+T3"));
+        assert_eq!(slot_key_label(0x24), None);
     }
 
     #[test]
