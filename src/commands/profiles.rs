@@ -1,14 +1,45 @@
-//! Whole-profile commands: `restore`, `reset` and `activate`.
+//! Whole-profile commands: `restore`, `reset`, `copy` and `activate`.
+//!
+//! `reset`, `copy` and `restore` read everything they need before the first
+//! write, and record every report they write as one change, so a single
+//! `undo` puts the whole command back.
 
-use super::{backup_file_name, new_backup_folder, profile_arg, save, write_with_undo};
+use super::{backup_file_name, profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    bindings, describe_light, for_profile, Report, ACTION_MACRO, MACRO_KEYS, THUMB_KEYS, valid_profile_report, with_all_defaults, with_capslock, with_light,
-    CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS, KEYS_CAPSLOCK, LIGHT, LIGHT_DEFAULT,
-    MEDIA_KEYS, PROFILE_REPORTS,
+    bindings, describe_light, for_profile, valid_profile_report, with_all_defaults, with_capslock,
+    with_light, Report, ACTION_MACRO, CAPSLOCK_DEFAULT, EASYZONE_KEYS, FUNCTION_KEYS,
+    KEYS_CAPSLOCK, LIGHT, LIGHT_DEFAULT, MACRO_KEYS, MEDIA_KEYS, PROFILE_REPORTS, THUMB_KEYS,
+    write_order,
 };
 use std::fs;
 use std::path::Path;
+
+/// One planned write: the report, its bytes now, and the bytes to write.
+struct Planned {
+    report: Report,
+    current: Vec<u8>,
+    updated: Vec<u8>,
+    message: String,
+}
+
+/// Writes every planned report that changes anything, as one change, in the
+/// order of PROFILE_REPORTS, which `undo` reverses. Returns how many were
+/// written.
+fn write_all(isku: &Isku, profile: u8, label: &str, plan: &mut [Planned]) -> Result<usize, String> {
+    plan.sort_by_key(|item| write_order(&item.report));
+    let mut changes = ChangeSet::new(label);
+    let mut written = 0;
+    for item in plan.iter() {
+        if item.updated != item.current {
+            changes.write(isku, profile, &item.report, &item.current, &item.updated)?;
+            println!("{}", item.message);
+            written += 1;
+        }
+    }
+    changes.print_undo_hint();
+    Ok(written)
+}
 
 pub fn restore(folder: &str, profile: &str) -> Result<(), String> {
     let profile = profile_arg(profile)?;
@@ -20,19 +51,20 @@ pub fn restore(folder: &str, profile: &str) -> Result<(), String> {
         if !valid_profile_report(report, profile, &bytes) {
             return Err(format!("{} is not a valid backup", path.display()));
         }
-        backups.push((report, bytes));
+        backups.push((*report, bytes));
     }
 
     let isku = Isku::open()?;
-    let mut restored = 0;
-    for (report, bytes) in &backups {
-        let current = isku.read_profile_report(profile, report)?;
-        if current != *bytes {
-            write_with_undo(&isku, profile, report, &current, bytes)?;
-            println!("Restored {}", report.name);
-            restored += 1;
-        }
+    let mut plan = Vec::new();
+    for (report, bytes) in backups {
+        plan.push(Planned {
+            report,
+            current: isku.read_profile_report(profile, &report)?,
+            updated: bytes,
+            message: format!("Restored {}", report.name),
+        });
     }
+    let restored = write_all(&isku, profile, &format!("restore-{}", profile + 1), &mut plan)?;
     println!(
         "Profile {} matches the backup. Reports restored: {restored}",
         profile + 1
@@ -42,58 +74,40 @@ pub fn restore(folder: &str, profile: &str) -> Result<(), String> {
 
 pub fn reset(number: &str) -> Result<(), String> {
     let profile = profile_arg(number)?;
+    require_backup(profile)?;
     let isku = Isku::open()?;
 
-    // Save the whole profile first, so `restore` can undo the reset.
-    // The same bytes are reused below, so each report is read only once.
-    let folder = new_backup_folder()?;
-    let mut saved = Vec::new();
-    for report in &PROFILE_REPORTS {
-        let bytes = isku.read_profile_report(profile, report)?;
-        save(Some(&folder), &backup_file_name(profile, report), &bytes)?;
-        saved.push((report.id, bytes));
-    }
-    println!("Saved profile {} to {}", profile + 1, folder.display());
-    let current_of = |report: &Report| -> Result<Vec<u8>, String> {
-        saved
-            .iter()
-            .find(|(id, _)| *id == report.id)
-            .map(|(_, bytes)| bytes.clone())
-            .ok_or_else(|| format!("{} was not read", report.name))
-    };
-
-    let mut changed = 0;
+    let mut plan = Vec::new();
     for group in [&EASYZONE_KEYS, &FUNCTION_KEYS, &MEDIA_KEYS] {
-        let current = current_of(&group.report)?;
+        let current = isku.read_profile_report(profile, &group.report)?;
         let updated = with_all_defaults(&current, group).ok_or("bad key report")?;
-        if updated != current {
-            write_with_undo(&isku, profile, &group.report, &current, &updated)?;
-            println!("Reset {}", group.title);
-            changed += 1;
-        }
+        plan.push(Planned {
+            report: group.report,
+            current,
+            updated,
+            message: format!("Reset {}", group.title),
+        });
     }
-    let current = current_of(&KEYS_CAPSLOCK)?;
+    let current = isku.read_profile_report(profile, &KEYS_CAPSLOCK)?;
     let updated = with_capslock(&current, CAPSLOCK_DEFAULT).ok_or("bad Caps Lock report")?;
-    if updated != current {
-        write_with_undo(&isku, profile, &KEYS_CAPSLOCK, &current, &updated)?;
-        println!("Reset Caps Lock to Easy-Shift");
-        changed += 1;
-    }
-    let current = current_of(&LIGHT)?;
+    plan.push(Planned {
+        report: KEYS_CAPSLOCK,
+        current,
+        updated,
+        message: "Reset Caps Lock to Easy-Shift".to_string(),
+    });
+    let current = isku.read_profile_report(profile, &LIGHT)?;
     let updated = with_light(&current, LIGHT_DEFAULT).ok_or("bad light report")?;
-    if updated != current {
-        write_with_undo(&isku, profile, &LIGHT, &current, &updated)?;
-        println!("Reset lighting to {}", describe_light(LIGHT_DEFAULT));
-        changed += 1;
-    }
+    plan.push(Planned {
+        report: LIGHT,
+        current,
+        updated,
+        message: format!("Reset lighting to {}", describe_light(LIGHT_DEFAULT)),
+    });
 
+    let changed = write_all(&isku, profile, &format!("reset-{}", profile + 1), &mut plan)?;
     println!(
         "Profile {}: {changed} groups reset. Thumb and M keys left as they were.",
-        profile + 1
-    );
-    println!(
-        "Undo with: cargo run -- restore {} {}",
-        folder.display(),
         profile + 1
     );
     Ok(())
@@ -108,23 +122,12 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
     if from == to {
         return Err("copy needs two different profiles".into());
     }
+    require_backup(to)?;
     let isku = Isku::open()?;
 
-    // Save the target first, so `restore` can undo the whole copy.
-    let folder = new_backup_folder()?;
-    let mut target = Vec::new();
-    for report in &PROFILE_REPORTS {
-        let bytes = isku.read_profile_report(to, report)?;
-        save(Some(&folder), &backup_file_name(to, report), &bytes)?;
-        target.push(bytes);
-    }
-    println!("Saved profile {} to {}", to + 1, folder.display());
-
-    // Read and check every source report before writing anything, so a bad
-    // source report stops the copy before the target changes. A write that
-    // fails partway can still leave it partly copied; the error then says
-    // how to restore it.
-    let mut copies = Vec::new();
+    // Read and check both profiles before writing anything, so a bad source
+    // report or a failed read stops the copy before the target changes.
+    let mut plan = Vec::new();
     let mut macro_keys = Vec::new();
     for report in &PROFILE_REPORTS {
         let source = isku.read_profile_report(from, report)?;
@@ -145,25 +148,16 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
                 }
             }
         }
-        copies.push(updated);
+        plan.push(Planned {
+            report: *report,
+            current: isku.read_profile_report(to, report)?,
+            updated,
+            message: format!("Copied {}", report.name),
+        });
     }
 
-    let mut changed = 0;
-    for ((report, current), updated) in PROFILE_REPORTS.iter().zip(&target).zip(&copies) {
-        if updated != current {
-            write_with_undo(&isku, to, report, current, updated).map_err(|e| {
-                format!(
-                    "{e}\nProfile {} may be partly copied. Put it back with: cargo run -- restore {} {}",
-                    to + 1,
-                    folder.display(),
-                    to + 1
-                )
-            })?;
-            println!("Copied {}", report.name);
-            changed += 1;
-        }
-    }
-
+    let label = format!("copy-{}-to-{}", from + 1, to + 1);
+    let changed = write_all(&isku, to, &label, &mut plan)?;
     println!(
         "Profile {} now matches profile {}: {changed} reports written.",
         to + 1,
@@ -176,11 +170,6 @@ pub fn copy(from: &str, to: &str) -> Result<(), String> {
             macro_keys.join(", ")
         );
     }
-    println!(
-        "Undo with: cargo run -- restore {} {}",
-        folder.display(),
-        to + 1
-    );
     Ok(())
 }
 

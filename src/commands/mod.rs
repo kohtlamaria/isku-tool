@@ -1,5 +1,6 @@
 //! One module per command. Shared file helpers live here.
 
+pub mod cleanup;
 pub mod light;
 pub mod profiles;
 pub mod set;
@@ -10,7 +11,6 @@ use isku_tool::device::{check_writable, Isku};
 use isku_tool::protocol::{parse_change_name, profile_index, Report, THUMB_KEYS};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn save(folder: Option<&Path>, name: &str, bytes: &[u8]) -> Result<(), String> {
@@ -32,36 +32,87 @@ pub fn timestamp() -> Result<u64, String> {
 /// Makes a new folder that no earlier backup uses, even when two backups
 /// start in the same millisecond.
 pub fn new_backup_folder() -> Result<PathBuf, String> {
-    let backups = PathBuf::from("backups");
-    fs::create_dir_all(&backups).map_err(|e| e.to_string())?;
-    let mut time = timestamp()?;
+    create_unique_folder(&backups_folder(), timestamp()?, |time| format!("backup-{time}"))
+}
+
+/// Makes a new folder in `parent` named by `name(time)`, starting at `time`
+/// and stepping the time forward while that name is taken.
+fn create_unique_folder(
+    parent: &Path,
+    mut time: u64,
+    name: impl Fn(u64) -> String,
+) -> Result<PathBuf, String> {
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     loop {
-        let folder = backups.join(format!("backup-{time}"));
+        let folder = parent.join(name(time));
         match fs::create_dir(&folder) {
             Ok(()) => return Ok(folder),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => time += 1,
-            Err(e) => return Err(e.to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && time < u64::MAX => {
+                time += 1
+            }
+            Err(e) => return Err(format!("{}: {e}", folder.display())),
         }
     }
 }
 
-/// Where `undo` keeps the bytes from before each change.
-pub fn changes_folder() -> PathBuf {
-    PathBuf::from("backups").join("changes")
+/// Where all backups and change files are kept.
+pub fn backups_folder() -> PathBuf {
+    PathBuf::from("backups")
 }
 
-/// One file in the changes folder.
+/// Where `undo` keeps the bytes from before each change.
+pub fn changes_folder() -> PathBuf {
+    backups_folder().join("changes")
+}
+
+/// One entry in the changes folder.
 pub struct Change {
     pub time: u64,
     pub name: String,
-    pub profile: u8,
-    pub report: Report,
-    /// Already used by `undo`, or set aside as invalid (`.bad`).
-    pub done: bool,
+    pub kind: ChangeKind,
+    pub state: ChangeState,
 }
 
-/// Every change file, including undone and invalid ones, so new change
-/// files never reuse their names. Other files are ignored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChangeState {
+    /// Not undone yet; `undo` will use it.
+    Pending,
+    /// Used by `undo` (`.undone`). Only these are ever cleaned up.
+    Undone,
+    /// Set aside by `undo` as invalid (`.bad`). Kept for a look.
+    Bad,
+}
+
+/// The file `undo` leaves in a command's change folder, holding the time it
+/// was undone, so cleanup counts the 30 days from then.
+pub const UNDONE_AT_FILE: &str = "undone-at.txt";
+
+pub enum ChangeKind {
+    /// A folder like `1794141018978-reset-5` with the bytes from before
+    /// every report one command wrote.
+    Command,
+    /// A single file like `1794141018978-profile-5-light.bin`, from before
+    /// changes were grouped by command.
+    OldFile { profile: u8, report: Report },
+}
+
+/// Reads a command's change folder name like `1794141018978-reset-5` into
+/// its time.
+fn parse_command_change_name(name: &str) -> Option<u64> {
+    let (time, label) = name.split_once('-')?;
+    let label_ok = !label.is_empty()
+        && label
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    let time_ok = !time.is_empty() && time.bytes().all(|b| b.is_ascii_digit());
+    if label_ok && time_ok {
+        time.parse().ok()
+    } else {
+        None
+    }
+}
+
+/// Every change, including undone and invalid ones. Other files are ignored.
 pub fn list_changes() -> Result<Vec<Change>, String> {
     let entries = match fs::read_dir(changes_folder()) {
         Ok(entries) => entries,
@@ -72,56 +123,130 @@ pub fn list_changes() -> Result<Vec<Change>, String> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let base = name
-                .strip_suffix(".undone")
-                .or_else(|| name.strip_suffix(".bad"))
-                .unwrap_or(&name);
-            let done = base.len() != name.len();
-            let (time, profile, report) = parse_change_name(base)?;
+            let (base, state) = if let Some(base) = name.strip_suffix(".undone") {
+                (base, ChangeState::Undone)
+            } else if let Some(base) = name.strip_suffix(".bad") {
+                (base, ChangeState::Bad)
+            } else {
+                (name.as_str(), ChangeState::Pending)
+            };
+            let is_dir = entry.file_type().is_ok_and(|t| t.is_dir());
+            let (time, kind) = if is_dir {
+                (parse_command_change_name(base)?, ChangeKind::Command)
+            } else {
+                let (time, profile, report) = parse_change_name(base)?;
+                (time, ChangeKind::OldFile { profile, report })
+            };
             Some(Change {
                 time,
                 name,
-                profile,
-                report,
-                done,
+                kind,
+                state,
             })
         })
         .collect())
 }
 
-/// The last change time used by this run, 0 before the first change.
-static LAST_CHANGE_TIME: AtomicU64 = AtomicU64::new(0);
-
-/// A time for the next change file that is later than every change file
-/// already saved, undone or not, so `undo` always finds the newest one. The
-/// changes folder is listed only once per run; this run's own later files
-/// are covered by remembering the last time used.
-fn next_change_time() -> Result<u64, String> {
-    let mut last = LAST_CHANGE_TIME.load(Ordering::Relaxed);
-    if last == 0 {
-        last = list_changes()?.iter().map(|c| c.time).max().unwrap_or(0);
-    }
-    let next = timestamp()?.max(last + 1);
-    LAST_CHANGE_TIME.store(next, Ordering::Relaxed);
-    Ok(next)
+/// The bytes from before every report one command writes, kept together in
+/// one folder so `undo` can put the whole command back at once. The folder
+/// is made on the first write, so a command that changes nothing leaves
+/// nothing behind.
+pub struct ChangeSet {
+    label: String,
+    folder: Option<PathBuf>,
+    /// True once a report was sent to the keyboard, so the profile may have
+    /// changed.
+    sent: bool,
 }
 
-/// Writes one report after saving its old bytes, so `undo` can put it back.
-/// A report the keyboard would refuse is rejected before anything is saved.
-/// If the write itself fails, the change file is kept, because a write that
-/// timed out can still land.
-pub fn write_with_undo(
-    isku: &Isku,
-    profile: u8,
-    report: &Report,
-    current: &[u8],
-    updated: &[u8],
-) -> Result<PathBuf, String> {
-    check_writable(profile, report, updated)?;
-    let file = save_change(profile, report, current)?;
-    isku.write_profile_report(profile, report, updated)
-        .map_err(|e| format!("{e} (the bytes from before are in {})", file.display()))?;
-    Ok(file)
+impl ChangeSet {
+    /// `label` names the command, such as `reset-5`.
+    pub fn new(label: &str) -> Self {
+        ChangeSet {
+            label: label.to_string(),
+            folder: None,
+            sent: false,
+        }
+    }
+
+    fn open_folder(&mut self) -> Result<PathBuf, String> {
+        if let Some(folder) = &self.folder {
+            return Ok(folder.clone());
+        }
+        // Later than every change so far, so `undo` finds this one first.
+        let last = list_changes()?.iter().map(|c| c.time).max().unwrap_or(0);
+        let time = timestamp()?.max(last.saturating_add(1));
+        let label = &self.label;
+        let folder = create_unique_folder(&changes_folder(), time, |time| format!("{time}-{label}"))?;
+        self.folder = Some(folder.clone());
+        Ok(folder)
+    }
+
+    /// Saves the bytes from before a change. They go to a temporary file
+    /// first and are renamed into place, so a saved report is either
+    /// complete or not there at all. If one command writes the same report
+    /// twice, the first, oldest bytes are kept.
+    fn save_old_bytes(&mut self, profile: u8, report: &Report, current: &[u8]) -> Result<(), String> {
+        let folder = self.open_folder()?;
+        let file = folder.join(backup_file_name(profile, report));
+        if file.exists() {
+            return Ok(());
+        }
+        let temporary = folder.join(format!("{}.tmp", backup_file_name(profile, report)));
+        let saved = fs::write(&temporary, current).and_then(|()| fs::rename(&temporary, &file));
+        if let Err(e) = saved {
+            let _ = fs::remove_file(&temporary);
+            // Nothing was sent yet, so an empty folder is not a change.
+            if !self.sent && fs::remove_dir(&folder).is_ok() {
+                self.folder = None;
+            }
+            return Err(format!("{}: {e}", file.display()));
+        }
+        Ok(())
+    }
+
+    /// Writes one report after saving its old bytes. A report the keyboard
+    /// would refuse is rejected before anything is saved. If the write
+    /// itself fails, the saved bytes are kept, because a write that timed
+    /// out can still land, and the error says how to put the profile back.
+    pub fn write(
+        &mut self,
+        isku: &Isku,
+        profile: u8,
+        report: &Report,
+        current: &[u8],
+        updated: &[u8],
+    ) -> Result<(), String> {
+        check_writable(profile, report, updated).map_err(|e| self.with_undo_note(e, profile))?;
+        self.save_old_bytes(profile, report, current)
+            .map_err(|e| self.with_undo_note(e, profile))?;
+        self.sent = true;
+        isku.write_profile_report(profile, report, updated)
+            .map_err(|e| self.with_undo_note(e, profile))
+    }
+
+    /// Adds how to put things back to an error, once a report was sent to
+    /// the keyboard during this command.
+    pub fn with_undo_note(&self, error: String, profile: u8) -> String {
+        if self.sent {
+            format!(
+                "{error}\nProfile {} may be partly changed. Put it back with: cargo run -- undo",
+                profile + 1
+            )
+        } else {
+            error
+        }
+    }
+
+    /// Prints how to put this command's changes back, if it changed anything.
+    pub fn print_undo_hint(&self) {
+        if let Some(folder) = &self.folder {
+            println!(
+                "Before this change: {}. Undo with: cargo run -- undo",
+                folder.display()
+            );
+        }
+    }
 }
 
 /// The file name of one report in a backup folder.
@@ -131,28 +256,8 @@ pub fn backup_file_name(profile: u8, report: &Report) -> String {
 
 pub fn has_backup(profile: u8) -> bool {
     let file = backup_file_name(profile, &THUMB_KEYS.report);
-    fs::read_dir("backups")
+    fs::read_dir(backups_folder())
         .is_ok_and(|mut entries| entries.any(|e| e.is_ok_and(|e| e.path().join(&file).exists())))
-}
-
-/// Saves a report's bytes from just before a change, so `undo` can put it back.
-fn save_change(profile: u8, report: &Report, bytes: &[u8]) -> Result<PathBuf, String> {
-    let folder = changes_folder();
-    fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
-    let file = folder.join(format!(
-        "{}-profile-{}-{}.bin",
-        next_change_time()?,
-        profile + 1,
-        report.name
-    ));
-    // create_new: never overwrite the bytes of an earlier change.
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&file)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, bytes))
-        .map_err(|e| format!("{}: {e}", file.display()))?;
-    Ok(file)
 }
 
 /// Stops a change when there is no backup of that profile yet.
@@ -169,4 +274,25 @@ pub fn require_backup(profile: u8) -> Result<(), String> {
 
 pub fn profile_arg(number: &str) -> Result<u8, String> {
     profile_index(number).ok_or_else(|| "use a profile number, 1 to 5".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_change_names() {
+        assert_eq!(parse_command_change_name("1794141018978-reset-5"), Some(1794141018978));
+        assert_eq!(parse_command_change_name("17-copy-1-to-5"), Some(17));
+        for bad in [
+            "1794141018978-profile-5-light.bin",
+            "1794141018978-",
+            "-reset-5",
+            "12x-reset-5",
+            "1794141018978-Reset",
+            "notes",
+        ] {
+            assert_eq!(parse_command_change_name(bad), None, "{bad}");
+        }
+    }
 }

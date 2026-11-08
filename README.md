@@ -7,7 +7,7 @@ keys and the Easy-Shift zone.
 - `docs/protocol.md`: what is known about the keyboard, and how sure we are
 - `probe/`: scripts that talk to the keyboard
 - `src/`: the Rust tool
-- `dumps/`: raw results to compare against
+- `dumps/`: raw results to compare against, kept out of git
 - `backups/`: profile backups, kept out of git by default
 
 `src/` is a Rust command-line tool for the keyboard's settings:
@@ -17,9 +17,15 @@ keys and the Easy-Shift zone.
   `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area.
 - `device.rs` talks to the keyboard. Every write is checked and read back.
 - `commands/` has one file per command, and `main.rs` only reads the arguments.
+- Only `backup` makes full backups (`backups/backup-<time>/`), and they are
+  never deleted automatically.
 - `set`, `light`, `reset`, `restore` and `copy` keep the bytes from before
-  each change in `backups/changes/`, so `undo` can step back one report at a
-  time.
+  they change anything in one folder per command, like
+  `backups/changes/<time>-reset-2/`. `undo` puts a whole command back in one
+  run, and renames its folder to `.undone`.
+- Commands that save files clean up `backups/` afterwards, deleting only
+  undone changes older than 30 days and empty backup folders older than a
+  day, which a failed `backup` can leave.
 
     cargo test            # needs no keyboard
     cargo run             # shows all 5 profiles
@@ -37,7 +43,7 @@ keys and the Easy-Shift zone.
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
     cargo run -- light 2 default      # factory lighting: 3, dims to 1 after 15 min
-    cargo run -- undo                 # put back the last changed report, run again to go further back
+    cargo run -- undo                 # put back the last command's changes, run again to go further back
     cargo run -- activate <1-5>       # switch the active profile
 
 Nothing that writes to the keyboard belongs in `main` until it has been tried

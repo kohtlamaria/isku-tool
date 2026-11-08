@@ -12,17 +12,30 @@
 //! cargo run -- light 2 default      factory lighting
 //! cargo run -- set 2 CapsLock off   Caps Lock: easyshift, capslock, off or default
 //! cargo run -- copy 5 2             copy profile 5's keys and lighting to profile 2
-//! cargo run -- undo                 put back the last changed report
+//! cargo run -- undo                 put back the last command's changes
 //! cargo run -- activate <1-5>       switch the active profile
 
 mod commands;
 
-use commands::{light, new_backup_folder, profiles, set, show, undo};
+use commands::{cleanup, light, new_backup_folder, profiles, set, show, undo};
 
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    match args.as_slice() {
+    let result = run(&args);
+    // Commands that save backups or change files tidy up after themselves.
+    let saves_files = matches!(
+        args.first(),
+        Some(&("backup" | "set" | "light" | "reset" | "restore" | "copy" | "undo"))
+    );
+    if result.is_ok() && saves_files {
+        cleanup::cleanup();
+    }
+    result
+}
+
+fn run(args: &[&str]) -> Result<(), String> {
+    match args {
         [] => show::show(None),
         ["backup"] => show::show(Some(&new_backup_folder()?)),
         ["set", profile, label, value] => set::set_key(profile, label, value),

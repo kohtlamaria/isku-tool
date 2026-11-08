@@ -166,12 +166,28 @@ pub fn for_profile(report: &Report, from: u8, bytes: &[u8], to: u8) -> Option<Ve
 /// Reads a change file name like `1793997539-profile-5-keys_easyzone.bin`
 /// into its time, profile (counted from 0) and report.
 pub fn parse_change_name(name: &str) -> Option<(u64, u8, Report)> {
-    let rest = name.strip_suffix(".bin")?;
-    let (time, rest) = rest.split_once("-profile-")?;
+    let (time, _) = name.split_once("-profile-")?;
+    let (profile, report) = parse_report_file_name(&name[time.len() + 1..])?;
+    Some((time.parse().ok()?, profile, report))
+}
+
+/// Where a report comes in the order commands write reports, which is the
+/// order of PROFILE_REPORTS. `undo` puts reports back in reverse.
+pub fn write_order(report: &Report) -> usize {
+    PROFILE_REPORTS
+        .iter()
+        .position(|r| r.id == report.id)
+        .unwrap_or(PROFILE_REPORTS.len())
+}
+
+/// Reads a report file name like `profile-5-keys_easyzone.bin`, as used in
+/// backup and change folders, into its profile (counted from 0) and report.
+pub fn parse_report_file_name(name: &str) -> Option<(u8, Report)> {
+    let rest = name.strip_prefix("profile-")?.strip_suffix(".bin")?;
     let (profile, report_name) = rest.split_once('-')?;
     let profile = profile_index(profile)?;
     let report = *PROFILE_REPORTS.iter().find(|r| r.name == report_name)?;
-    Some((time.parse().ok()?, profile, report))
+    Some((profile, report))
 }
 
 #[cfg(test)]
@@ -252,6 +268,22 @@ mod tests {
         assert_eq!(for_profile(&KEYS_THUMBSTER, 1, &THUMBSTER, 4), None);
         assert_eq!(for_profile(&KEYS_CAPSLOCK, 0, &THUMBSTER, 4), None);
         assert_eq!(for_profile(&KEYS_THUMBSTER, 0, &THUMBSTER, 5), None);
+    }
+
+    #[test]
+    fn parse_report_file_name_reads_backup_names() {
+        let (profile, report) = parse_report_file_name("profile-2-keys_thumbster.bin").unwrap();
+        assert_eq!((profile, report.id), (1, KEYS_THUMBSTER.id));
+        for bad in [
+            "profile-2-keys_thumbster.bin.undone",
+            "profile-0-light.bin",
+            "profile-2-firmware.bin",
+            "profile-2-macro-00.bin",
+            "1-profile-2-light.bin",
+            "info.bin",
+        ] {
+            assert!(parse_report_file_name(bad).is_none(), "{bad}");
+        }
     }
 
     #[test]

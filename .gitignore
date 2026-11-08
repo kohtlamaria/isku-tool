@@ -1,4 +1,5 @@
 backups/
+dumps/
 *.log
 node_modules/
 target/

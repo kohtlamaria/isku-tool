@@ -1,6 +1,6 @@
 //! `set`: change one key on one profile.
 
-use super::{profile_arg, require_backup, write_with_undo};
+use super::{profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     action_code, capslock_action, capslock_of, describe_capslock, find_key, is_easyshift, parse_shortcut, shortcut_text,
@@ -62,12 +62,13 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    let undo_file = write_with_undo(&isku, profile, &group.report, &current, &updated)?;
+    let mut changes = ChangeSet::new(&format!("set-{}", profile + 1));
+    changes.write(&isku, profile, &group.report, &current, &updated)?;
     println!(
         "Profile {}: {name} is now {text}. Read back and confirmed.",
         profile + 1
     );
-    println!("Before this change: {}", undo_file.display());
+    changes.print_undo_hint();
     Ok(())
 }
 
@@ -92,11 +93,12 @@ fn set_capslock(profile: u8, value: &str) -> Result<(), String> {
     }
     let text = describe_capslock(action);
 
-    let undo_file = write_with_undo(&isku, profile, &KEYS_CAPSLOCK, &current, &updated)?;
+    let mut changes = ChangeSet::new(&format!("set-{}", profile + 1));
+    changes.write(&isku, profile, &KEYS_CAPSLOCK, &current, &updated)?;
     println!(
         "Profile {}: Caps Lock is now {text}. Read back and confirmed.",
         profile + 1
     );
-    println!("Before this change: {}", undo_file.display());
+    changes.print_undo_hint();
     Ok(())
 }

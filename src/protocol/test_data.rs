@@ -2,7 +2,8 @@
 
 use super::*;
 
-// Real bytes from dumps/2026-11-05-first-probe.txt.
+// Real bytes from the first probe (dumps/2026-11-05-first-probe.txt, kept
+// locally and out of git, like all of dumps/).
 pub(crate) const THUMBSTER: [u8; 23] = [
     0x0b, 0x17, 0x00, 0xbe, 0xbe, 0xbe, 0xb9, 0xb9, 0xb9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x87,
     0x04,
@@ -34,6 +35,6 @@ pub(crate) fn macro_report(name: &str, strokes: &[(u8, u8)]) -> Vec<u8> {
     report
 }
 
-// Profile 1 light report from dumps/2026-11-05-first-probe.txt.
+// Profile 1 light report from the same first probe.
 pub(crate) const LIGHT_REPORT: [u8; 10] =
     [0x10, 0x0a, 0x00, 0x03, 0x00, 0x05, 0x01, 0x0f, 0x32, 0x00];

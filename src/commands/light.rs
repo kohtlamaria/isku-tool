@@ -1,6 +1,6 @@
 //! `light`: brightness, dimming and timeout for one profile.
 
-use super::{profile_arg, require_backup, write_with_undo};
+use super::{profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{describe_light, parse_light, with_light, Light, LIGHT, LIGHT_DEFAULT};
 
@@ -49,12 +49,13 @@ pub fn set_light(number: &str, setting: &str, value: Option<&str>) -> Result<(),
         return Ok(());
     }
 
-    let undo_file = write_with_undo(&isku, profile, &LIGHT, &current, &updated)?;
+    let mut changes = ChangeSet::new(&format!("light-{}", profile + 1));
+    changes.write(&isku, profile, &LIGHT, &current, &updated)?;
     println!(
         "Profile {}: lighting is now {}. Read back and confirmed.",
         profile + 1,
         describe_light(wanted)
     );
-    println!("Before this change: {}", undo_file.display());
+    changes.print_undo_hint();
     Ok(())
 }
