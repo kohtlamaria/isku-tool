@@ -1,5 +1,7 @@
 backups/
 dumps/
+# Lists the USB devices on the PC that ran the probe.
+probe/isku-probe-result.txt
 *.log
 node_modules/
 target/

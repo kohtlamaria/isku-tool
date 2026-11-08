@@ -4,6 +4,11 @@ A small replacement for the old Roccat software, for the original Roccat Isku
 (USB 1E7D:319C). Goal: pick a profile and remap keys, starting with the thumb
 keys and the Easy-Shift zone.
 
+This is a personal project, tested on one keyboard. It writes to the
+keyboard's settings, so use it at your own risk: run `cargo run -- backup`
+first, and try changes on a profile you don't use. It never touches the
+firmware.
+
 - `docs/protocol.md`: what is known about the keyboard, and how sure we are
 - `probe/`: scripts that talk to the keyboard
 - `src/`: the Rust tool
