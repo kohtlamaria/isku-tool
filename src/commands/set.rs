@@ -3,8 +3,9 @@
 use super::{profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    action_code, capslock_action, capslock_of, describe_capslock, find_key, is_easyshift, parse_shortcut, shortcut_text,
-    key_label, with_action, with_capslock, with_default, with_shortcut, KEYS_CAPSLOCK,
+    action_code, capslock_action, capslock_of, describe_capslock, find_key, is_easyshift,
+    key_label, parse_shortcut, shortcut_text, with_action, with_capslock, with_default,
+    with_shortcut, KEYS_CAPSLOCK,
 };
 
 pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {

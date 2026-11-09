@@ -36,7 +36,9 @@ pub fn timestamp() -> Result<u64, String> {
 /// Makes a new folder that no earlier backup uses, even when two backups
 /// start in the same millisecond.
 pub fn new_backup_folder() -> Result<PathBuf, String> {
-    create_unique_folder(&backups_folder(), timestamp()?, |time| format!("backup-{time}"))
+    create_unique_folder(&backups_folder(), timestamp()?, |time| {
+        format!("backup-{time}")
+    })
 }
 
 /// Makes a new folder in `parent` named by `name(time)`, starting at `time`
@@ -51,9 +53,7 @@ fn create_unique_folder(
         let folder = parent.join(name(time));
         match fs::create_dir(&folder) {
             Ok(()) => return Ok(folder),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && time < u64::MAX => {
-                time += 1
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && time < u64::MAX => time += 1,
             Err(e) => return Err(format!("{}: {e}", folder.display())),
         }
     }
@@ -181,7 +181,8 @@ impl ChangeSet {
         let last = list_changes()?.iter().map(|c| c.time).max().unwrap_or(0);
         let time = timestamp()?.max(last.saturating_add(1));
         let label = &self.label;
-        let folder = create_unique_folder(&changes_folder(), time, |time| format!("{time}-{label}"))?;
+        let folder =
+            create_unique_folder(&changes_folder(), time, |time| format!("{time}-{label}"))?;
         self.folder = Some(folder.clone());
         Ok(folder)
     }
@@ -343,7 +344,10 @@ mod tests {
 
     #[test]
     fn command_change_names() {
-        assert_eq!(parse_command_change_name("1794141018978-reset-5"), Some(1794141018978));
+        assert_eq!(
+            parse_command_change_name("1794141018978-reset-5"),
+            Some(1794141018978)
+        );
         assert_eq!(parse_command_change_name("17-copy-1-to-5"), Some(17));
         for bad in [
             "1794141018978-profile-5-light.bin",

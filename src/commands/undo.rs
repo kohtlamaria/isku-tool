@@ -226,7 +226,9 @@ pub fn undo() -> Result<(), String> {
                 item.describe()
             );
             if item.was_empty_slot() {
-                println!("  The slot held no macro before, so it now holds one that plays nothing.");
+                println!(
+                    "  The slot held no macro before, so it now holds one that plays nothing."
+                );
             }
         }
     }

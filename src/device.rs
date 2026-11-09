@@ -5,8 +5,7 @@
 
 use crate::protocol::{
     actual_profile_report, checksum_ok, control_report, valid_macro_report, valid_profile_report,
-    Report,
-    ACTUAL_PROFILE, CONTROL_REPORT_ID, FEATURE_BUFFER_LEN, MACRO_REPORT_ID, PRODUCT_ID,
+    Report, ACTUAL_PROFILE, CONTROL_REPORT_ID, FEATURE_BUFFER_LEN, MACRO_REPORT_ID, PRODUCT_ID,
     PROFILE_COUNT, PROFILE_REPORTS, SETTINGS_USAGE_PAGE, STATUS_BUSY, STATUS_EMPTY, STATUS_OK,
     VENDOR_ID,
 };
@@ -247,8 +246,12 @@ impl Isku {
         self.send_and_wait(bytes, WRITE_WAIT)?;
         match self.read_macro(profile, key_index)? {
             Some(back) if back == bytes => Ok(()),
-            Some(_) => Err(format!("macro 0x{key_index:02x}: read back different bytes")),
-            None => Err(format!("macro 0x{key_index:02x}: the slot is empty after writing")),
+            Some(_) => Err(format!(
+                "macro 0x{key_index:02x}: read back different bytes"
+            )),
+            None => Err(format!(
+                "macro 0x{key_index:02x}: the slot is empty after writing"
+            )),
         }
     }
 }

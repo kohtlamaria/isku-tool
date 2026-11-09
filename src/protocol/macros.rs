@@ -251,17 +251,18 @@ pub fn parse_macro_text(text: &str) -> Option<Vec<Keystroke>> {
         keystrokes.extend(held.iter().map(|&code| stroke(code, KEYSTROKE_PRESS)));
         keystrokes.push(stroke(key, KEYSTROKE_PRESS));
         keystrokes.push(stroke(key, KEYSTROKE_RELEASE));
-        keystrokes.extend(held.iter().rev().map(|&code| stroke(code, KEYSTROKE_RELEASE)));
+        keystrokes.extend(
+            held.iter()
+                .rev()
+                .map(|&code| stroke(code, KEYSTROKE_RELEASE)),
+        );
     }
     (keystrokes.len() <= MAX_KEYSTROKES).then_some(keystrokes)
 }
 
 /// The name a macro gets from its text: the text, cut to fit the field.
 pub fn macro_name(text: &str) -> String {
-    text.chars()
-        .filter(char::is_ascii)
-        .take(NAME_LEN)
-        .collect()
+    text.chars().filter(char::is_ascii).take(NAME_LEN).collect()
 }
 
 /// The file name of one macro in a backup or change folder.
@@ -468,7 +469,15 @@ mod tests {
             strokes("1, wait 50, WAIT 10 ,2"),
             [(0x1e, 1, 0), (0x1e, 2, 60), (0x1f, 1, 0), (0x1f, 2, 0)]
         );
-        for bad in ["", "wait 50, 1", "1, wait 0", "1, wait x", "1,,2", "Ctrl+", "Hyper+1"] {
+        for bad in [
+            "",
+            "wait 50, 1",
+            "1, wait 0",
+            "1, wait x",
+            "1,,2",
+            "Ctrl+",
+            "Hyper+1",
+        ] {
             assert_eq!(parse_macro_text(bad), None, "{bad}");
         }
         assert!(parse_macro_text(&vec!["1"; MAX_KEYSTROKES / 2].join(",")).is_some());

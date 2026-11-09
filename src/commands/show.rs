@@ -5,8 +5,8 @@ use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro,
     empty_macro_file_name, macro_file_name, macro_slot, parse_light, parse_macro, KeyGroup,
-    ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, LAST_SET, LIGHT, MACRO_KEYS, MEDIA_KEYS,
-    KEYS_CAPSLOCK, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET, LIGHT, MACRO_KEYS,
+    MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::path::Path;
 use std::time::Instant;

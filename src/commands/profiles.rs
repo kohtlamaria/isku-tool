@@ -4,9 +4,7 @@
 //! write, and record every report and macro they write as one change, so a
 //! single `undo` puts the whole command back.
 
-use super::{
-    backup_file_name, check_undoable_macro, profile_arg, require_backup, ChangeSet,
-};
+use super::{backup_file_name, check_undoable_macro, profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, describe_light, empty_macro_report, for_profile, macro_for_profile, macro_slot,

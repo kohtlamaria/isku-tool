@@ -128,7 +128,9 @@ fn clean_empty_backups(now: u64) -> Result<usize, String> {
         let old = backup_time(&name).is_some_and(|t| older_than(t, EMPTY_BACKUP_AGE_MS, now));
         // remove_dir only removes an empty folder; one with files in it
         // fails and stays.
-        if old && entry.file_type().is_ok_and(|t| t.is_dir()) && fs::remove_dir(entry.path()).is_ok()
+        if old
+            && entry.file_type().is_ok_and(|t| t.is_dir())
+            && fs::remove_dir(entry.path()).is_ok()
         {
             removed += 1;
         }
@@ -165,10 +167,10 @@ mod tests {
         let old = NOW - 31 * DAY_MS;
         let recent = NOW - 29 * DAY_MS;
         let changes = [
-            change(old, old, Undone, Command),          // undone long ago: delete
+            change(old, old, Undone, Command), // undone long ago: delete
             change(old + 1, old + 1, Pending, Command), // pending: keep
-            change(old + 2, old + 2, Bad, Command),     // set aside: keep
-            change(old + 3, recent, Undone, Command),   // old, but undone lately: keep
+            change(old + 2, old + 2, Bad, Command), // set aside: keep
+            change(old + 3, recent, Undone, Command), // old, but undone lately: keep
             change(old / 1000, old / 1000, Undone, old_file()), // old, in seconds: delete
             change(recent / 1000, recent / 1000, Undone, old_file()), // recent, in seconds: keep
             change(u64::MAX, u64::MAX, Undone, old_file()), // no overflow: keep
@@ -177,14 +179,22 @@ mod tests {
             .iter()
             .map(|c| c.name.as_str())
             .collect();
-        assert_eq!(picked, [changes[0].0.name.as_str(), changes[4].0.name.as_str()]);
+        assert_eq!(
+            picked,
+            [changes[0].0.name.as_str(), changes[4].0.name.as_str()]
+        );
     }
 
     #[test]
     fn backup_folder_names() {
         assert_eq!(backup_time("backup-1794087795971"), Some(1794087795971));
         assert_eq!(backup_time("backup-1793898236"), Some(1793898236));
-        for bad in ["backup-", "backup-12x", "changes", "backup-99999999999999999999"] {
+        for bad in [
+            "backup-",
+            "backup-12x",
+            "changes",
+            "backup-99999999999999999999",
+        ] {
             assert_eq!(backup_time(bad), None, "{bad}");
         }
         assert!(older_than(1793898236, DAY_MS, NOW));
