@@ -3,6 +3,7 @@
 pub mod cleanup;
 pub mod light;
 pub mod macros;
+pub mod profile_file;
 pub mod profiles;
 pub mod set;
 pub mod show;

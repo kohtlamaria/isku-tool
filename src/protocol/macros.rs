@@ -172,6 +172,31 @@ pub fn header_for_new_macro(old: Option<&Macro>) -> [u8; NAMES_AT - HEADER_AT] {
     header
 }
 
+/// The macro report for macro text written into a slot that holds `old`
+/// now: its header as `header_for_new_macro` gives it, the tool's macroset
+/// name, and the text as its name. None when it does not fit.
+pub fn macro_from_text(
+    profile: u8,
+    key_index: u8,
+    old: Option<&Macro>,
+    text: &str,
+    keystrokes: Vec<Keystroke>,
+) -> Option<Vec<u8>> {
+    let value = Macro {
+        header: header_for_new_macro(old),
+        macroset: MACROSET_NAME.to_string(),
+        name: macro_name(text),
+        keystrokes,
+    };
+    build_macro(profile, key_index, &value)
+}
+
+/// True when a macro has the type and loop count the tool writes, so it
+/// plays once and does just what its keystrokes say.
+pub fn plays_once(value: &Macro) -> bool {
+    header_for_new_macro(Some(value)) == value.header
+}
+
 /// Plain-language summary of a macro, such as `press 1, release 1`.
 pub fn describe_macro(value: &Macro) -> String {
     if value.keystrokes.is_empty() {
@@ -258,6 +283,39 @@ pub fn parse_macro_text(text: &str) -> Option<Vec<Keystroke>> {
         );
     }
     (keystrokes.len() <= MAX_KEYSTROKES).then_some(keystrokes)
+}
+
+/// Writes keystrokes as macro text that `parse_macro_text` reads back into
+/// exactly the same keystrokes, or None when that is not possible, for
+/// example an empty macro or one that holds a key down across steps.
+pub fn macro_to_text(keystrokes: &[Keystroke]) -> Option<String> {
+    let mut steps = Vec::new();
+    let mut rest = keystrokes;
+    while !rest.is_empty() {
+        // A step presses its modifiers and key, then releases them all, so
+        // it is twice as long as its run of presses. The key comes last.
+        let presses = rest
+            .iter()
+            .take_while(|k| k.action == KEYSTROKE_PRESS)
+            .count();
+        let (step, after) = rest.split_at_checked(2 * presses)?;
+        let (key, held) = step[..presses].split_last()?;
+        let mut modifier = 0u8;
+        for k in held {
+            let (bit, _, _) = MODIFIERS.iter().find(|(_, _, code)| *code == k.key)?;
+            modifier |= 1 << bit;
+        }
+        steps.push(shortcut_text(modifier, key.key));
+        let wait = step.last()?.period_ms;
+        if wait > 0 {
+            steps.push(format!("wait {wait}"));
+        }
+        rest = after;
+    }
+    // Reading the text back catches everything the loop above lets through,
+    // such as releases in another order or a wait inside a step.
+    let text = steps.join(", ");
+    (!text.is_empty() && parse_macro_text(&text)? == keystrokes).then_some(text)
 }
 
 /// The name a macro gets from its text: the text, cut to fit the field.
@@ -482,6 +540,54 @@ mod tests {
         }
         assert!(parse_macro_text(&vec!["1"; MAX_KEYSTROKES / 2].join(",")).is_some());
         assert!(parse_macro_text(&vec!["1"; MAX_KEYSTROKES / 2 + 1].join(",")).is_none());
+    }
+
+    #[test]
+    fn macro_to_text_reads_back_the_same() {
+        for (text, expected) in [
+            ("7", "7"),
+            ("ctrl+c, wait 50, Ctrl+V", "Ctrl+C, wait 50, Ctrl+V"),
+            ("Win+Ctrl+C", "Ctrl+Win+C"),
+            ("1, wait 50, wait 10, 2", "1, wait 60, 2"),
+            ("LeftCtrl, Ctrl+LeftShift", "LeftCtrl, Ctrl+LeftShift"),
+        ] {
+            let keystrokes = parse_macro_text(text).unwrap();
+            assert_eq!(macro_to_text(&keystrokes).as_deref(), Some(expected));
+            assert_eq!(parse_macro_text(expected).unwrap(), keystrokes);
+        }
+    }
+
+    #[test]
+    fn macro_to_text_refuses_what_text_cannot_say() {
+        let k = |key, action, period_ms| Keystroke {
+            key,
+            action,
+            period_ms,
+        };
+        for keystrokes in [
+            // Empty.
+            vec![],
+            // Shift held down across two keys.
+            vec![
+                k(0xe1, 1, 0),
+                k(0x04, 1, 0),
+                k(0x04, 2, 0),
+                k(0x05, 1, 0),
+                k(0x05, 2, 0),
+                k(0xe1, 2, 0),
+            ],
+            // Released in the wrong order.
+            vec![k(0xe0, 1, 0), k(0x06, 1, 0), k(0xe0, 2, 0), k(0x06, 2, 0)],
+            // A wait between press and release.
+            vec![k(0x1e, 1, 30), k(0x1e, 2, 0)],
+            // Only a press, or an unknown action.
+            vec![k(0x1e, 1, 0)],
+            vec![k(0x1e, 3, 0), k(0x1e, 2, 0)],
+            // A key with no name.
+            vec![k(0xf0, 1, 0), k(0xf0, 2, 0)],
+        ] {
+            assert_eq!(macro_to_text(&keystrokes), None, "{keystrokes:?}");
+        }
     }
 
     #[test]

@@ -419,6 +419,12 @@ pub fn is_easyshift(action: u8) -> bool {
     action == ACTION_EASYSHIFT || action == ACTION_EASYSHIFT_OLD
 }
 
+/// True when two action codes do the same, counting both Easy-Shift codes
+/// as one.
+pub fn same_action(a: u8, b: u8) -> bool {
+    a == b || (is_easyshift(a) && is_easyshift(b))
+}
+
 /// Returns a copy of a Caps Lock report with a new action and checksum.
 pub fn with_capslock(report: &[u8], action: u8) -> Option<Vec<u8>> {
     if report.len() != KEYS_CAPSLOCK.len || report[0] != KEYS_CAPSLOCK.id {

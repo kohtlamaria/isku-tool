@@ -19,12 +19,13 @@ firmware.
 
 - `protocol/` holds the report format, with no USB code, so a Tauri or other
   front end can reuse it later. `mod.rs` has the report table and checksums;
-  `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area.
+  `keys.rs`, `actions.rs`, `light.rs` and `macros.rs` each cover one area,
+  and `profile_text.rs` is the text format of `export` and `import`.
 - `device.rs` talks to the keyboard. Every write is checked and read back.
 - `commands/` has one file per command, and `main.rs` only reads the arguments.
 - Only `backup` makes full backups (`backups/backup-<time>/`), and they are
   never deleted automatically.
-- `set`, `macro`, `light`, `reset`, `restore` and `copy` keep the bytes from
+- `set`, `macro`, `light`, `reset`, `restore`, `copy` and `import` keep the bytes from
   before they change anything in one folder per command, like
   `backups/changes/<time>-reset-2/`. `undo` puts a whole command back in one
   run, and renames its folder to `.undone`.
@@ -45,6 +46,8 @@ firmware.
     cargo run -- set 2 CapsLock off   # Caps Lock: easyshift, capslock, off or default
     cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  # T1 plays this macro
     cargo run -- copy 5 2             # copy profile 5's keys, lighting and macros to profile 2
+    cargo run -- export 2 p2.txt      # save profile 2 as a text file you can edit
+    cargo run -- import p2.txt 5      # set profile 5 to what the file says
     cargo run -- restore <folder> 2   # put profile 2 back from a backup
     cargo run -- reset 2              # zone, F-, media, Caps Lock and lighting to factory
     cargo run -- light 2 brightness 3 # brightness or dim 0-5, timeout in minutes
@@ -77,6 +80,23 @@ gives the noted slots a macro that plays nothing. Slots no key used are not
 in a backup and are left as they are. Older backups, including the ones
 `reset` and `copy` used to make, may lack some or all macros; `restore`
 then leaves those alone and lists the keys.
+
+`export` writes one profile as text, one line per key, plus Caps Lock and
+lighting:
+
+    T1       = Ctrl+F5
+    T2       = profile-cycle
+    M1       = macro "Ctrl+C, wait 50, Ctrl+V"
+    Shift+Q  = default
+    CapsLock = easyshift
+    light    = brightness 3, dim 1, timeout 15
+
+Values are the ones `set`, `macro` and `light` take. What the tool cannot
+set, such as quicklaunch keys or macros from the old software that hold a
+key down, is written as a `#` line, which `import` skips. `import` checks
+the whole file before writing, changes only what it lists, and leaves keys
+alone that already match, so importing a fresh export writes nothing. One
+`undo` puts a whole import back. `export` never overwrites a file.
 
 ## Licence
 

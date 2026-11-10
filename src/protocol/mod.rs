@@ -9,6 +9,7 @@ mod actions;
 mod keys;
 mod light;
 mod macros;
+mod profile_text;
 #[cfg(test)]
 mod test_data;
 
@@ -16,6 +17,7 @@ pub use actions::*;
 pub use keys::*;
 pub use light::*;
 pub use macros::*;
+pub use profile_text::*;
 
 pub const VENDOR_ID: u16 = 0x1E7D;
 

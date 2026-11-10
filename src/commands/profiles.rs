@@ -17,27 +17,27 @@ use std::fs;
 use std::path::Path;
 
 /// One planned write: the report, its bytes now, and the bytes to write.
-struct Planned {
-    report: Report,
-    current: Vec<u8>,
-    updated: Vec<u8>,
-    message: String,
+pub(super) struct Planned {
+    pub(super) report: Report,
+    pub(super) current: Vec<u8>,
+    pub(super) updated: Vec<u8>,
+    pub(super) message: String,
 }
 
 /// One planned macro write: the slot, the macro in it now (`None` when it
 /// holds none), and the macro to write.
-struct PlannedMacro {
-    key_index: u8,
-    current: Option<Vec<u8>>,
-    updated: Vec<u8>,
-    message: String,
+pub(super) struct PlannedMacro {
+    pub(super) key_index: u8,
+    pub(super) current: Option<Vec<u8>>,
+    pub(super) updated: Vec<u8>,
+    pub(super) message: String,
 }
 
 /// Writes every planned macro and report that changes anything, as one
 /// change. Macros go first, so a key never plays a half-written slot, then
 /// reports in the order of PROFILE_REPORTS. `undo` goes the other way.
 /// Returns how many reports and macros were written.
-fn write_all(
+pub(super) fn write_all(
     isku: &Isku,
     profile: u8,
     label: &str,
@@ -72,20 +72,24 @@ fn write_all(
 }
 
 /// The name of the key that plays a slot, for messages.
-fn slot_name(key_index: u8) -> String {
+pub(super) fn slot_name(key_index: u8) -> String {
     slot_key_label(key_index).unwrap_or_else(|| format!("slot 0x{key_index:02x}"))
 }
 
 /// The macro in a slot now, refused while planning if `undo` could not put
 /// it back, so nothing is written before the problem shows.
-fn current_macro(isku: &Isku, profile: u8, key_index: u8) -> Result<Option<Vec<u8>>, String> {
+pub(super) fn current_macro(
+    isku: &Isku,
+    profile: u8,
+    key_index: u8,
+) -> Result<Option<Vec<u8>>, String> {
     let current = isku.read_macro(profile, key_index)?;
     check_undoable_macro(profile, key_index, current.as_deref())?;
     Ok(current)
 }
 
 /// The macro slots the keys in one profile report play.
-fn played_slots(report: &Report, bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub(super) fn played_slots(report: &Report, bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut slots = Vec::new();
     for group in [&THUMB_KEYS, &MACRO_KEYS, &EASYZONE_KEYS] {
         if group.report.id != report.id {

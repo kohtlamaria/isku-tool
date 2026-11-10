@@ -3,8 +3,7 @@
 use super::{profile_arg, require_backup, ChangeSet};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    build_macro, find_key, header_for_new_macro, key_label, macro_name, macro_slot, parse_macro,
-    parse_macro_text, with_macro, Macro, MACROSET_NAME,
+    find_key, key_label, macro_from_text, macro_slot, parse_macro, parse_macro_text, with_macro,
 };
 
 pub fn set_macro(profile: &str, label: &str, text: &str) -> Result<(), String> {
@@ -25,13 +24,8 @@ pub fn set_macro(profile: &str, label: &str, text: &str) -> Result<(), String> {
     let current_keys = isku.read_profile_report(profile, &group.report)?;
     let current_macro = isku.read_macro(profile, key_index)?;
     let old = current_macro.as_deref().and_then(parse_macro);
-    let value = Macro {
-        header: header_for_new_macro(old.as_ref()),
-        macroset: MACROSET_NAME.to_string(),
-        name: macro_name(text),
-        keystrokes,
-    };
-    let updated_macro = build_macro(profile, key_index, &value).ok_or("macro does not fit")?;
+    let updated_macro = macro_from_text(profile, key_index, old.as_ref(), text, keystrokes)
+        .ok_or("macro does not fit")?;
     let updated_keys = with_macro(&current_keys, group, position).ok_or("bad key report")?;
 
     let name = key_label(group, position);
