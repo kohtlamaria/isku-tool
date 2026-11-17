@@ -162,3 +162,11 @@ wrote six reports and macros, and a new export matched the file. With a key
 tester: T1 typed Ctrl+F5, F5 typed Ctrl+1, T2 typed Ctrl+C then Ctrl+V about
 70 ms later, Easy-Shift+Q typed 7, and Caps Lock worked as `capslock` and as
 `easyshift`. A one-line file changed only that setting.
+
+Confirmed on Profile 5: the media key actions 81-83 are what roccat-tools says,
+system shut down, sleep and wake. With 82 on VolDown, pressing it put the PC to
+sleep; 83 on VolUp did nothing on an awake PC. Profile 1 has had 81 82 83 on
+Mute, VolDown and VolUp since the first backup, and Profile 5 got them from it on
+7 Nov. Profiles 2-4 have the normal a0 a2 a1. `set <profile> Mute default`
+(and VolDown, VolUp) writes a0 a2 a1; done on Profiles 1 and 5 on 17 Nov,
+and the volume keys then worked.
