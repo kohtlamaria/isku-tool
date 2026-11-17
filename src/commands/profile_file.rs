@@ -2,12 +2,13 @@
 //! edited. The format is in `protocol::profile_text`.
 
 use super::profiles::{current_macro, played_slots, write_all, Planned, PlannedMacro};
+use super::show::print_warnings;
 use super::{profile_arg, require_backup};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     apply_settings, key_label, macro_from_text, macro_slot, parse_macro, parse_profile_text,
-    plays_once, profile_text, KeyValue, Report, Setting, KEYS_CAPSLOCK, LEFT_OUT_NOTE, LIGHT,
-    PROFILE_TEXT_GROUPS,
+    plays_once, profile_text, risky_keys, KeyValue, Report, Setting, KEYS_CAPSLOCK, LEFT_OUT_NOTE,
+    LIGHT, PROFILE_TEXT_GROUPS,
 };
 use std::fs;
 use std::io::Write;
@@ -54,6 +55,11 @@ pub fn export(profile: &str, file: &str) -> Result<(), String> {
             "Left out, as # lines, because import cannot set them: {left_out} of the settings."
         );
     }
+    let warnings: Vec<String> = risky_keys(&reports)?
+        .into_iter()
+        .map(|key| format!("Profile {}: {key}", profile + 1))
+        .collect();
+    print_warnings(&warnings);
     Ok(())
 }
 

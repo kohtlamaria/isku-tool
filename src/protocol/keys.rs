@@ -290,12 +290,55 @@ fn action_name(action: u8) -> Option<&'static str> {
     })
 }
 
+/// What an action does to the PC when it is one nobody wants to press by
+/// accident. Confirmed on Profile 5: 82 put the PC to sleep. Profile 1 had 81
+/// on Mute from the old software, so these can sit on everyday keys.
+pub fn risky_action(action: u8) -> Option<&'static str> {
+    match action {
+        0x81 => Some("turns the PC off"),
+        0x82 => Some("puts the PC to sleep"),
+        _ => None,
+    }
+}
+
+/// One line per key of a profile whose action is risky, such as
+/// "Mute turns the PC off", over all key groups and Caps Lock. `reports` must
+/// hold each of those reports; a missing or short one is an error, so an
+/// empty list always means every key was checked.
+pub fn risky_keys(reports: &[(Report, Vec<u8>)]) -> Result<Vec<String>, String> {
+    let report = |wanted: &Report| {
+        reports
+            .iter()
+            .find(|(r, _)| r.id == wanted.id)
+            .map(|(_, bytes)| bytes.as_slice())
+            .ok_or_else(|| format!("missing {} report", wanted.name))
+    };
+    let mut found = Vec::new();
+    for group in PROFILE_TEXT_GROUPS {
+        let keys = bindings(report(&group.report)?, group.labels.len())
+            .ok_or_else(|| format!("bad {} report", group.report.name))?;
+        for (position, binding) in keys.iter().enumerate() {
+            if let Some(risk) = risky_action(binding.action) {
+                found.push(format!("{} {risk}", key_label(group, position)));
+            }
+        }
+    }
+    let capslock = capslock_of(report(&KEYS_CAPSLOCK)?).ok_or("bad keys_capslock report")?;
+    if let Some(risk) = risky_action(capslock) {
+        found.push(format!("CapsLock {risk}"));
+    }
+    Ok(found)
+}
+
 pub fn describe(binding: Binding) -> String {
     if binding.action == ACTION_SHORTCUT {
         return format!("shortcut {}", shortcut_text(binding.modifier, binding.key));
     }
     match action_name(binding.action) {
-        Some(name) => format!("{name} (0x{:02x})", binding.action),
+        Some(name) => match risky_action(binding.action) {
+            Some(risk) => format!("{name} (0x{:02x}), {risk}", binding.action),
+            None => format!("{name} (0x{:02x})", binding.action),
+        },
         None if binding.action < 0x80 => format!("key {}", key_name(binding.action)),
         None => format!("unknown action (0x{:02x})", binding.action),
     }
@@ -515,6 +558,54 @@ mod tests {
         assert_eq!(describe(bind(0x1e, 0, 0)), "key 1");
         assert_eq!(describe(bind(0x27, 0, 0)), "key 0");
         assert_eq!(describe(bind(0xb8, 0b0110, 0x1e)), "shortcut Ctrl+Shift+1");
+        assert_eq!(
+            describe(bind(0x81, 0, 0)),
+            "system shut down (0x81), turns the PC off"
+        );
+        assert_eq!(describe(bind(0x83, 0, 0)), "system wake (0x83)");
+    }
+
+    #[test]
+    fn risky_keys_names_shut_down_and_sleep() {
+        // Every key report of a profile, all keys off (00) after the header.
+        let mut reports: Vec<(Report, Vec<u8>)> = PROFILE_TEXT_GROUPS
+            .iter()
+            .map(|group| group.report)
+            .chain([KEYS_CAPSLOCK])
+            .map(|report| {
+                let mut bytes = vec![0; report.len];
+                bytes[0] = report.id;
+                bytes[1] = report.len as u8;
+                (report, bytes)
+            })
+            .collect();
+        assert_eq!(risky_keys(&reports), Ok(vec![]));
+
+        // Profile 1's media keys as the old software left them: 81 82 83.
+        let media = reports
+            .iter_mut()
+            .find(|(r, _)| r.id == KEYS_MEDIA.id)
+            .unwrap();
+        media.1[3..6].copy_from_slice(&[0x81, 0x82, 0x83]);
+        let capslock = reports
+            .iter_mut()
+            .find(|(r, _)| r.id == KEYS_CAPSLOCK.id)
+            .unwrap();
+        capslock.1[3] = 0x81;
+        assert_eq!(
+            risky_keys(&reports),
+            Ok(vec![
+                "Mute turns the PC off".to_string(),
+                "VolDown puts the PC to sleep".to_string(),
+                "CapsLock turns the PC off".to_string(),
+            ])
+        );
+
+        // A short or missing report is an error, not "nothing risky".
+        reports[0].1.truncate(4);
+        assert!(risky_keys(&reports).is_err());
+        reports.remove(0);
+        assert!(risky_keys(&reports).is_err());
     }
 
     #[test]

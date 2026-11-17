@@ -4,9 +4,9 @@ use super::{backup_file_name, save};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
     bindings, capslock_of, describe, describe_capslock, describe_light, describe_macro,
-    empty_macro_file_name, macro_file_name, macro_slot, parse_light, parse_macro, KeyGroup,
-    ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET, LIGHT, MACRO_KEYS,
-    MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
+    empty_macro_file_name, macro_file_name, macro_slot, parse_light, parse_macro, risky_keys,
+    KeyGroup, ACTION_MACRO, EASYZONE_KEYS, FUNCTION_KEYS, INFO, KEYS_CAPSLOCK, LAST_SET, LIGHT,
+    MACRO_KEYS, MEDIA_KEYS, PROFILE_COUNT, PROFILE_REPORTS, THUMB_KEYS,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -62,6 +62,7 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
     let started = Instant::now();
     let isku = Isku::open()?;
     let active_before = isku.active_profile()?;
+    let mut warnings = Vec::new();
 
     for profile in 0..PROFILE_COUNT {
         let marker = if profile == active_before {
@@ -76,15 +77,18 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
         for report in &PROFILE_REPORTS {
             let bytes = isku.read_profile_report(profile, report)?;
             save(folder, &backup_file_name(profile, report), &bytes)?;
-            reports.push((report.id, bytes));
+            reports.push((*report, bytes));
         }
         let bytes_of = |id: u8| {
             reports
                 .iter()
-                .find(|(r, _)| *r == id)
+                .find(|(r, _)| r.id == id)
                 .map(|(_, b)| b.as_slice())
                 .ok_or("missing report")
         };
+        for key in risky_keys(&reports)? {
+            warnings.push(format!("Profile {}: {key}", profile + 1));
+        }
 
         for (group, only_changed) in [
             (&THUMB_KEYS, false),
@@ -109,6 +113,8 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
             println!("  Lighting: {}", describe_light(light));
         }
     }
+    // Before anything else can fail, so the warnings are never lost.
+    print_warnings(&warnings);
 
     for report in [&INFO, &LAST_SET] {
         save(
@@ -136,4 +142,20 @@ pub fn show(folder: Option<&Path>) -> Result<(), String> {
         isku.timing()
     );
     Ok(())
+}
+
+/// Keys that turn the PC off or put it to sleep, listed after the profiles so
+/// they are not lost in the listing.
+pub fn print_warnings(warnings: &[String]) {
+    if warnings.is_empty() {
+        return;
+    }
+    println!("Careful, these keys do more than type:");
+    for warning in warnings {
+        println!("  {warning}");
+    }
+    println!(
+        "Change one with set, for example: cargo run -- set 1 Mute default \
+         (default works on zone, F-, media keys and CapsLock; give T and M keys an action)"
+    );
 }

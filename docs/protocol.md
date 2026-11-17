@@ -81,7 +81,8 @@ see the results below.
 
 - A key report is written as a whole: id, size, profile, the three arrays,
   checksum. Then wait for status OK, as with select.
-- 0x05 actual_profile is written as `05 03 <profile>`.
+- 0x05 actual_profile is written as `05 03 <profile>`. Confirmed: `activate`
+  switches the active profile this way.
 
 Confirmed: the old software stored number bindings as macros with a press and a
 release. For a Shortcut (b8) binding, roccat-tools stores the key and modifier in
