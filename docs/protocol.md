@@ -76,7 +76,8 @@ Keystroke action: 1 press, 2 release.
 
 ## Writing
 
-Source: roccat-tools. Not yet tried on our keyboard.
+Format from roccat-tools. Key report writes have since been tried on Profile 5;
+see the results below.
 
 - A key report is written as a whole: id, size, profile, the three arrays,
   checksum. Then wait for status OK, as with select.
@@ -154,3 +155,10 @@ Macro writes, confirmed on Profile 5:
 
 1. M2-M5 and Easy-Shift M writes are untested (M1 works). They use the same
    report as M1, so they are expected to work.
+
+Confirmed on Profile 5: `import` of an edited export (T1 Ctrl+F5, T2 macro
+"Ctrl+C, wait 50, Ctrl+V", Easy-Shift+Q 7, F5 Ctrl+1, Caps Lock, brightness)
+wrote six reports and macros, and a new export matched the file. With a key
+tester: T1 typed Ctrl+F5, F5 typed Ctrl+1, T2 typed Ctrl+C then Ctrl+V about
+70 ms later, Easy-Shift+Q typed 7, and Caps Lock worked as `capslock` and as
+`easyshift`. A one-line file changed only that setting.
