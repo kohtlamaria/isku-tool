@@ -154,8 +154,11 @@ Macro writes, confirmed on Profile 5:
 
 ## Next questions
 
-1. M2-M5 and Easy-Shift M writes are untested (M1 works). They use the same
-   report as M1, so they are expected to work.
+None open.
+
+Confirmed on Profile 5 on 19 Nov: M2-M5 and Shift+M1 to Shift+M5 take
+key writes like M1. An `import` set them to F13-F21 in one keys_macro write,
+and with a key tester each key typed its F-key.
 
 Confirmed on Profile 5: `import` of an edited export (T1 Ctrl+F5, T2 macro
 "Ctrl+C, wait 50, Ctrl+V", Easy-Shift+Q 7, F5 Ctrl+1, Caps Lock, brightness)
