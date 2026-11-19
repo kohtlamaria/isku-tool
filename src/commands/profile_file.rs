@@ -6,34 +6,47 @@ use super::show::print_warnings;
 use super::{profile_arg, require_backup};
 use isku_tool::device::Isku;
 use isku_tool::protocol::{
-    apply_settings, key_label, macro_from_text, macro_slot, parse_macro, parse_profile_text,
-    plays_once, profile_text, risky_keys, KeyValue, Report, Setting, KEYS_CAPSLOCK, LEFT_OUT_NOTE,
-    LIGHT, PROFILE_TEXT_GROUPS,
+    apply_settings, changed_values, key_label, macro_from_text, macro_slot, parse_macro,
+    parse_profile_text, plays_once, profile_text, risky_keys, KeyValue, Macro, Report, Setting,
+    KEYS_CAPSLOCK, LEFT_OUT_NOTE, LIGHT, PROFILE_TEXT_GROUPS,
 };
 use std::fs;
 use std::io::Write;
 
-pub fn export(profile: &str, file: &str) -> Result<(), String> {
-    let profile = profile_arg(profile)?;
-    let isku = Isku::open()?;
-    let mut reports = Vec::new();
-    let mut macros = Vec::new();
-    for report in PROFILE_TEXT_GROUPS
+/// The reports a profile file lists, in order.
+pub(super) fn profile_text_reports() -> impl Iterator<Item = Report> {
+    PROFILE_TEXT_GROUPS
         .iter()
         .map(|group| group.report)
         .chain([KEYS_CAPSLOCK, LIGHT])
-    {
+}
+
+/// Reads what `profile_text` needs from the keyboard: the reports, and the
+/// macro in each slot a key plays. A macro that does not parse is left out,
+/// so the text says it could not be read.
+pub(super) fn read_profile(isku: &Isku, profile: u8) -> Result<ProfileData, String> {
+    let mut reports = Vec::new();
+    let mut macros = Vec::new();
+    for report in profile_text_reports() {
         let bytes = isku.read_profile_report(profile, &report)?;
         for key_index in played_slots(&report, &bytes)? {
             match isku.read_macro(profile, key_index)? {
-                // A macro that does not parse is left out of `macros`, so
-                // the file says it could not be read.
                 Some(bytes) => macros.extend(parse_macro(&bytes).map(|m| (key_index, Some(m)))),
                 None => macros.push((key_index, None)),
             }
         }
         reports.push((report, bytes));
     }
+    Ok((reports, macros))
+}
+
+/// A profile's reports and its macros, as `profile_text` takes them.
+pub(super) type ProfileData = (Vec<(Report, Vec<u8>)>, Vec<(u8, Option<Macro>)>);
+
+pub fn export(profile: &str, file: &str) -> Result<(), String> {
+    let profile = profile_arg(profile)?;
+    let isku = Isku::open()?;
+    let (reports, macros) = read_profile(&isku, profile)?;
     let text = profile_text(profile, &reports, &macros)?;
 
     // Never overwrite a file, which could be an earlier export or anything
@@ -73,24 +86,13 @@ pub fn import(file: &str, profile: &str) -> Result<(), String> {
     require_backup(profile)?;
     let isku = Isku::open()?;
 
-    // Read everything the file touches before the first write.
-    let mut needed: Vec<Report> = Vec::new();
-    for setting in &settings {
-        let report = match setting {
-            Setting::Key { group, .. } => group.report,
-            Setting::CapsLock(_) => KEYS_CAPSLOCK,
-            Setting::Light(_) => LIGHT,
-        };
-        if !needed.iter().any(|r| r.id == report.id) {
-            needed.push(report);
-        }
-    }
-    let mut reports = Vec::new();
-    for report in needed {
-        reports.push((report, isku.read_profile_report(profile, &report)?));
-    }
+    // Read the whole profile before the first write, so the changes can be
+    // listed from its text before and after.
+    let (mut reports, macros_before) = read_profile(&isku, profile)?;
 
     let mut macros = Vec::new();
+    // The macro each macro line leaves in its slot, for the text after.
+    let mut macros_after = macros_before.clone();
     for setting in &settings {
         let Setting::Key {
             group,
@@ -108,14 +110,17 @@ pub fn import(file: &str, profile: &str) -> Result<(), String> {
         let old = current.as_deref().and_then(parse_macro);
         // The same keystrokes, played once: only the name could differ, so
         // the slot is left as it is.
-        if old
+        macros_after.retain(|(slot, _)| *slot != key_index);
+        if let Some(same) = old
             .as_ref()
-            .is_some_and(|m| m.keystrokes == *keystrokes && plays_once(m))
+            .filter(|m| m.keystrokes == *keystrokes && plays_once(m))
         {
+            macros_after.push((key_index, Some(same.clone())));
             continue;
         }
         let updated = macro_from_text(profile, key_index, old.as_ref(), text, keystrokes.clone())
             .ok_or_else(|| format!("the macro for {label} does not fit"))?;
+        macros_after.extend(parse_macro(&updated).map(|m| (key_index, Some(m))));
         macros.push(PlannedMacro {
             key_index,
             current,
@@ -126,6 +131,30 @@ pub fn import(file: &str, profile: &str) -> Result<(), String> {
 
     let current = reports.clone();
     apply_settings(&mut reports, &settings)?;
+
+    // Only for showing, so a report it cannot describe never stops the write.
+    let changes = match (
+        profile_text(profile, &current, &macros_before),
+        profile_text(profile, &reports, &macros_after),
+    ) {
+        (Ok(before), Ok(after)) => changed_values(&before, &after),
+        _ => {
+            println!("Could not list the changes, writing them anyway.");
+            Vec::new()
+        }
+    };
+    if !changes.is_empty() {
+        println!("Changes to profile {}:", profile + 1);
+        let width = changes
+            .iter()
+            .map(|(label, ..)| label.len())
+            .max()
+            .unwrap_or(0);
+        for (label, old, new) in &changes {
+            println!("  {label:width$}  {old}  ->  {new}");
+        }
+    }
+
     let mut plan: Vec<Planned> = reports
         .into_iter()
         .zip(current)

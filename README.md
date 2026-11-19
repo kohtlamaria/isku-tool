@@ -98,6 +98,9 @@ the whole file before writing, changes only what it lists, and leaves keys
 alone that already match, so importing a fresh export writes nothing. One
 `undo` puts a whole import back. `export` never overwrites a file.
 
+Before writing, `import` lists each key it changes, with its old and new
+value.
+
 ## Ideas
 
 Not built yet.

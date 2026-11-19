@@ -189,6 +189,36 @@ pub fn parse_profile_text(text: &str) -> Result<Vec<Setting>, String> {
     Ok(settings)
 }
 
+/// The settings whose line differs between two texts `profile_text` wrote,
+/// as label, old value and new value, in the order of `after`. A setting
+/// `import` cannot set shows as `# what the key does`.
+pub fn changed_values(before: &str, after: &str) -> Vec<(String, String, String)> {
+    let before: Vec<(&str, String)> = before.lines().filter_map(export_line).collect();
+    after
+        .lines()
+        .filter_map(export_line)
+        .filter_map(|(label, new)| {
+            let (_, old) = before.iter().find(|(l, _)| *l == label)?;
+            (*old != new).then(|| (label.to_string(), old.clone(), new))
+        })
+        .collect()
+}
+
+/// The label and value of one line `profile_text` wrote, or None for a
+/// heading, a note or a blank line.
+fn export_line(line: &str) -> Option<(&str, String)> {
+    if let Some(comment) = line.strip_prefix("# ") {
+        let rest = comment.strip_suffix(LEFT_OUT_NOTE)?.trim_end();
+        let (label, what) = rest.split_once(": ")?;
+        return Some((
+            label,
+            format!("# {}", what.strip_suffix('.').unwrap_or(what)),
+        ));
+    }
+    let (label, value) = line.split_once(" = ")?;
+    Some((label.trim_end(), value.to_string()))
+}
+
 /// True when two settings change the same key, Caps Lock or the lighting.
 fn same_target(a: &Setting, b: &Setting) -> bool {
     match (a, b) {
@@ -522,6 +552,33 @@ mod tests {
         ] {
             assert!(text.lines().any(|l| l == line), "{line}\n\n{text}");
         }
+    }
+
+    #[test]
+    fn changed_values_lists_only_what_an_import_changes() {
+        let before_reports = profile();
+        let before = profile_text(0, &before_reports, &macros()).unwrap();
+        assert!(changed_values(&before, &before).is_empty());
+
+        // T1 from a macro to a shortcut, Shift+T1 from quicklaunch to off,
+        // and dim 1 to 2. M1 = off already matches.
+        let mut after_reports = before_reports.clone();
+        let file = "T1 = Ctrl+F5\nShift+T1 = off\nM1 = off\nlight = dim 2";
+        apply_settings(&mut after_reports, &parse_profile_text(file).unwrap()).unwrap();
+        let after = profile_text(0, &after_reports, &macros()).unwrap();
+        assert_eq!(
+            changed_values(&before, &after),
+            [
+                ("T1", "macro \"Ctrl+Q\"", "Ctrl+F5"),
+                ("Shift+T1", "# quicklaunch (0xb9)", "off"),
+                (
+                    "light",
+                    "brightness 5, dim 1, timeout 15",
+                    "brightness 5, dim 2, timeout 15"
+                ),
+            ]
+            .map(|(l, o, n)| (l.to_string(), o.to_string(), n.to_string()))
+        );
     }
 
     #[test]
