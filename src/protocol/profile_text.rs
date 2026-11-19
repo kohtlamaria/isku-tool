@@ -21,7 +21,7 @@ use super::*;
 /// What one key is set to.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KeyValue {
-    /// What the key does unchanged, for zone, F- and media keys.
+    /// What the key does unchanged, for all but the thumb keys.
     Default,
     /// A special action from ACTIONS.
     Action(u8),
@@ -167,7 +167,8 @@ pub fn parse_profile_text(text: &str) -> Result<Vec<Setting>, String> {
             })?;
             if value == KeyValue::Default && group.defaults.is_none() {
                 return Err(at(&format!(
-                    "{label} has no default; default only works for zone, F- and media keys"
+                    "{label} has no default; {} have none",
+                    group.title.to_lowercase()
                 )));
             }
             if matches!(value, KeyValue::Macro(..)) && macro_slot(group, position).is_none() {
@@ -520,6 +521,32 @@ mod tests {
             "light    = brightness 5, dim 1, timeout 15",
         ] {
             assert!(text.lines().any(|l| l == line), "{line}\n\n{text}");
+        }
+    }
+
+    #[test]
+    fn m_keys_export_and_import_as_default() {
+        let mut reports = profile();
+        reports[1].1 = with_all_defaults(&blank(KEYS_MACRO), &MACRO_KEYS).unwrap();
+        let text = profile_text(0, &reports, &macros()).unwrap();
+        for line in ["M3       = default", "Shift+M5 = default"] {
+            assert!(text.lines().any(|l| l == line), "{line}\n\n{text}");
+        }
+        // The blank report has every M key off; default puts M3 back.
+        let mut changed = profile();
+        apply_settings(&mut changed, &parse_profile_text("M3 = default").unwrap()).unwrap();
+        let keys = bindings(&changed[1].1, 10).unwrap();
+        assert_eq!(keys[2].action, 0xd5);
+        assert_eq!(keys[3].action, 0x00);
+        // So importing a fresh export leaves every M key alone.
+        let at_default = bindings(&reports[1].1, 10).unwrap();
+        for (position, binding) in at_default.into_iter().enumerate() {
+            assert!(already_set(
+                &MACRO_KEYS,
+                position,
+                binding,
+                &KeyValue::Default
+            ));
         }
     }
 

@@ -26,9 +26,10 @@ pub fn set_key(profile: &str, label: &str, value: &str) -> Result<(), String> {
         return Err("for a macro use: cargo run -- macro <1-5> T1 \"Ctrl+C\"".into());
     }
     if wanted == KeyValue::Default && group.defaults.is_none() {
-        return Err(
-            "default only works for zone, F- and media keys, use restore for the others".into(),
-        );
+        return Err(format!(
+            "{} have no default, use restore for them",
+            group.title.to_lowercase()
+        ));
     }
     let text = match wanted {
         KeyValue::Shortcut(modifier, key) => shortcut_text(modifier, key),

@@ -52,8 +52,13 @@ pub const MACRO_KEYS: KeyGroup = KeyGroup {
         "M1", "M2", "M3", "M4", "M5", "Shift+M1", "Shift+M2", "Shift+M3", "Shift+M4", "Shift+M5",
     ],
     first_macro_index: 0x00,
-    defaults: None,
+    defaults: Some(&MACRO_DEFAULTS),
 };
+
+/// What the M keys hold when unchanged, as on profiles 2-4 in our backup:
+/// M1-M5 type Shift+1 to Shift+5, Shift+M1 to Shift+M5 type Ctrl+1 to
+/// Ctrl+5. Confirmed with a key tester, without Roccat's software.
+pub const MACRO_DEFAULTS: [u8; 10] = [0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc];
 
 pub const EASYZONE_KEYS: KeyGroup = KeyGroup {
     title: "Easy-Shift zone",
@@ -260,8 +265,17 @@ fn action_name(action: u8) -> Option<&'static str> {
         0xbc => "timer",
         0xbd => "timer stop",
         0xbe => "macro",
-        0xd3..=0xd7 => "standard Shift+number",
-        0xd8..=0xdc => "standard Ctrl+number",
+        // "standard", so these do not read like shortcuts or key labels.
+        0xd3 => "standard Shift+1",
+        0xd4 => "standard Shift+2",
+        0xd5 => "standard Shift+3",
+        0xd6 => "standard Shift+4",
+        0xd7 => "standard Shift+5",
+        0xd8 => "standard Ctrl+1",
+        0xd9 => "standard Ctrl+2",
+        0xda => "standard Ctrl+3",
+        0xdb => "standard Ctrl+4",
+        0xdc => "standard Ctrl+5",
         0xdd => "open driver",
         0xc0 => "open email",
         0xc1 => "open calculator",

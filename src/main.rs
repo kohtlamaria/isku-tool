@@ -4,10 +4,10 @@
 //! cargo run -- set 2 T1 Ctrl+F5     keys can be letters, F-keys, Space and so on
 //! cargo run -- set 2 Shift+Q Ctrl+1  Easy-Shift zone keys and M keys work the same way
 //! cargo run -- set 2 F5 Ctrl+1      F1-F12 and media keys (Mute, VolUp...) too
-//! cargo run -- set 2 Shift+Q default put a zone, F- or media key back to normal
+//! cargo run -- set 2 Shift+Q default put a zone, M, F- or media key back to normal
 //! cargo run -- set 2 T3 profile-cycle  actions: off, profile-1, easyshift...
 //! cargo run -- restore <folder> 2   put profile 2 back from a backup
-//! cargo run -- reset 2             put profile 2's keys and lighting back to factory settings
+//! cargo run -- reset 2             zone, F-, media keys, Caps Lock and lighting to factory
 //! cargo run -- light 2 brightness 3 lighting: brightness, dim (0-5) or timeout (min)
 //! cargo run -- light 2 default      factory lighting
 //! cargo run -- set 2 CapsLock off   Caps Lock: easyshift, capslock, off or default

@@ -41,7 +41,7 @@ firmware.
     cargo run -- set 2 Shift+Q Ctrl+1 # Easy-Shift zone and M keys work the same way
     cargo run -- set 2 F5 Ctrl+1      # F1-F12 and media keys: Mute, VolDown, VolUp,
                                       # Play, Prev, Next, WWW, Computer
-    cargo run -- set 2 Shift+Q default  # put a zone, F- or media key back to normal
+    cargo run -- set 2 Shift+Q default  # put a zone, M, F- or media key back to normal
     cargo run -- set 2 T3 profile-cycle # special actions, see below
     cargo run -- set 2 CapsLock off   # Caps Lock: easyshift, capslock, off or default
     cargo run -- macro 2 T1 "Ctrl+C, wait 50, Ctrl+V"  # T1 plays this macro
@@ -97,6 +97,17 @@ key down, is written as a `#` line, which `import` skips. `import` checks
 the whole file before writing, changes only what it lists, and leaves keys
 alone that already match, so importing a fresh export writes nothing. One
 `undo` puts a whole import back. `export` never overwrites a file.
+
+## Ideas
+
+Not built yet.
+
+- **Your own defaults.** Save a profile file, in the `export` format, as
+  your defaults. `default` in `set` and `import`, and `reset`, would then use
+  that file for the keys it lists, and factory settings for the rest. Thumb
+  keys could get a default this way too. Open questions: one file for all
+  profiles or one per profile, and where to keep it. It would live on the PC,
+  not the keyboard, so another PC would still use factory settings.
 
 ## Licence
 

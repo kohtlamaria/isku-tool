@@ -160,6 +160,16 @@ Confirmed on Profile 5 on 19 Nov: M2-M5 and Shift+M1 to Shift+M5 take
 key writes like M1. An `import` set them to F13-F21 in one keys_macro write,
 and with a key tester each key typed its F-key.
 
+Confirmed on Profile 2 on 19 Nov, with a key tester and no Roccat software:
+
+- The M keys' factory actions work in the keyboard itself. M1-M5 (d3-d7)
+  typed Shift+1 to Shift+5, and Shift+M1 to Shift+M5 (d8-dc) typed Ctrl+1 to
+  Ctrl+5. Their modifier and key bytes are zero on all profiles. The tool
+  treats these as the M keys' `default`.
+- c3 (open browser) on WWW opened the browser, although d0 did nothing on
+  F12. Whether c3 works away from the media row is untested.
+- ba (macro play/pause) on Shift+A did nothing; it needs Roccat's software.
+
 Confirmed on Profile 5: `import` of an edited export (T1 Ctrl+F5, T2 macro
 "Ctrl+C, wait 50, Ctrl+V", Easy-Shift+Q 7, F5 Ctrl+1, Caps Lock, brightness)
 wrote six reports and macros, and a new export matched the file. With a key

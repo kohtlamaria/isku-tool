@@ -156,6 +156,6 @@ pub fn print_warnings(warnings: &[String]) {
     }
     println!(
         "Change one with set, for example: cargo run -- set 1 Mute default \
-         (default works on zone, F-, media keys and CapsLock; give T and M keys an action)"
+         (default works on all keys but T1-T3; give those an action)"
     );
 }

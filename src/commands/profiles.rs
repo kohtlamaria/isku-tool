@@ -255,6 +255,8 @@ pub fn reset(number: &str) -> Result<(), String> {
     let isku = Isku::open()?;
 
     let mut plan = Vec::new();
+    // M keys have defaults too, but are left alone like the thumb keys,
+    // because they often play macros the user made.
     for group in [&EASYZONE_KEYS, &FUNCTION_KEYS, &MEDIA_KEYS] {
         let current = isku.read_profile_report(profile, &group.report)?;
         let updated = with_all_defaults(&current, group).ok_or("bad key report")?;
